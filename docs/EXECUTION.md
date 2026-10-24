@@ -44,3 +44,15 @@ Kraken has no spot sandbox: in PAPER mode Kraken orders are sent with `validate=
 - At a £50 cap most US stocks cost more than one share per slot, so trades will be mostly crypto.
 - The bot checks once per day. Stops are broker-side, but targets on Kraken and time exits are only evaluated at 02:20 UTC.
 - UK tax: gains are subject to Capital Gains Tax. Keep the ledger export.
+
+## Historical trade replay (run this before trusting anything)
+
+`/desk` → **Historical trade replay** → *Run replay (all symbols)*, or locally `npm run replay`.
+
+- Walks every past day using only the bars available that day and the **same `decideSymbol` code the live bot uses** (`lib/engine/decision.ts`). A test proves decisions don't change when future bars change.
+- Simulates the executor's real orders: Alpaca bracket limit (entry ×1.003, intraday stop/target); Kraken market buy + broker stop with target/time checked once a day; gaps through a stop fill at the open.
+- Realistic costs: crypto **1.70% round trip** (Kraken Pro tier-1 taker 0.80% per side + slippage), equities 0.10%. Toggle to the ledger's 0.16% to see cost sensitivity.
+- Verdict: `NO_EDGE` (avg ≤ 0, PF < 1.2 or DD > 25%), `INCONCLUSIVE` (< 30 trades or below the validated bar), `PROMISING` (≥100 trades, PF ≥ 1.3, avg ≥ 0.2%). Even PROMISING still needs forward paper confirmation.
+- Not modelled: earnings blocks, correlation to existing holdings, learned weights. Crypto history is capped at ~720 days by Kraken.
+
+**Cost warning:** the forward ledger and the live readiness gate deduct only 0.16% per trade for crypto. At Kraken tier-1 fees a crypto trade really costs ~1.7%. Treat a VALIDATED crypto record with suspicion until the replay's realistic-cost result is also positive.

@@ -83,3 +83,14 @@
 .exec-table th,.exec-table td{padding:7px 9px;border-bottom:1px solid var(--soft);text-align:left;white-space:nowrap}
 .exec-table th{font:700 8px ui-monospace,monospace;letter-spacing:.08em;color:var(--muted);background:#090e0c}
 @media(max-width:800px){.exec-grid{grid-template-columns:1fr 1fr}}
+
+/* V5.4 replay panel */
+.replay-no_edge{color:var(--danger);border-color:var(--danger)!important}.replay-inconclusive{color:var(--warn);border-color:var(--warn)!important}.replay-promising{color:var(--accent);border-color:var(--accent)!important}
+.replay-curve{margin:14px 0 0;border:1px solid var(--line);background:#090e0c;padding:12px}
+.replay-curve figcaption{font:700 8px ui-monospace,monospace;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
+.replay-curve svg{width:100%;height:180px;display:block;cursor:crosshair}
+.replay-line{fill:none;stroke:var(--accent);stroke-width:2;vector-effect:non-scaling-stroke}
+.replay-base{stroke:var(--line);stroke-dasharray:4 4;vector-effect:non-scaling-stroke}
+.replay-cross{stroke:var(--muted);stroke-width:1;vector-effect:non-scaling-stroke}
+.replay-dot{fill:var(--accent);stroke:var(--panel);stroke-width:2}
+.replay-tip{font:600 11px ui-monospace,monospace;color:var(--text);margin-top:6px}

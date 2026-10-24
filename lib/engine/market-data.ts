@@ -270,10 +270,10 @@ async function getCryptoHistory(symbol: string): Promise<{ symbol: string; sourc
   };
 }
 
-async function getYahooEquityHistory(symbol: string, host = "query1.finance.yahoo.com") {
+async function getYahooEquityHistory(symbol: string, host = "query1.finance.yahoo.com", calendarDays: number = ENGINE.historyCalendarDays) {
   const end = new Date();
   end.setUTCDate(end.getUTCDate() + 1);
-  const start = new Date(end.getTime() - ENGINE.historyCalendarDays * 86_400_000);
+  const start = new Date(end.getTime() - calendarDays * 86_400_000);
   const yahooSymbol = symbol.replaceAll(".", "-");
   const url = `https://${host}/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?period1=${unixSeconds(start)}&period2=${unixSeconds(end)}&interval=1d&includePrePost=false&events=div%2Csplits`;
   const response = await fetchWithTimeout(url);
@@ -321,10 +321,10 @@ function mergeBars(base: PriceBar[], patch: PriceBar[]) {
   return dedupeBars([...base, ...patch]);
 }
 
-async function getStooqEquityHistory(symbol: string) {
+async function getStooqEquityHistory(symbol: string, calendarDays: number = ENGINE.historyCalendarDays) {
   const end = new Date();
   const start = new Date();
-  start.setUTCDate(end.getUTCDate() - ENGINE.historyCalendarDays);
+  start.setUTCDate(end.getUTCDate() - calendarDays);
   const stooqSymbol = `${symbol.toLowerCase().replaceAll(".", "-")}.us`;
   const url = `https://stooq.com/q/d/l/?s=${encodeURIComponent(stooqSymbol)}&d1=${yyyymmdd(start)}&d2=${yyyymmdd(end)}&i=d`;
   const response = await fetchWithTimeout(url);
@@ -334,7 +334,7 @@ async function getStooqEquityHistory(symbol: string) {
   return bars;
 }
 
-async function getEquityHistory(symbol: string): Promise<{ symbol: string; source: MarketSource; bars: PriceBar[]; warning?: string }> {
+async function getEquityHistory(symbol: string, calendarDays: number = ENGINE.historyCalendarDays): Promise<{ symbol: string; source: MarketSource; bars: PriceBar[]; warning?: string }> {
   const expected = expectedCompletedEquitySession();
   const failures: string[] = [];
   let best: { source: MarketSource; bars: PriceBar[]; label: string } | null = null;
@@ -345,7 +345,7 @@ async function getEquityHistory(symbol: string): Promise<{ symbol: string; sourc
   };
 
   try {
-    const bars = await getYahooEquityHistory(symbol, "query1.finance.yahoo.com");
+    const bars = await getYahooEquityHistory(symbol, "query1.finance.yahoo.com", calendarDays);
     if (consider("YAHOO_CHART_DAILY", bars, "Yahoo primary")) return { symbol, source: "YAHOO_CHART_DAILY", bars };
   } catch (error) {
     failures.push(`Yahoo primary: ${error instanceof Error ? error.message : "unknown error"}`);
@@ -353,7 +353,7 @@ async function getEquityHistory(symbol: string): Promise<{ symbol: string; sourc
 
   // If Yahoo is stale or unavailable, check an independent EOD source instead of accepting stale data.
   try {
-    const bars = await getStooqEquityHistory(symbol);
+    const bars = await getStooqEquityHistory(symbol, calendarDays);
     if (consider("STOOQ_EOD", bars, "Stooq backup")) {
       return { symbol, source: "STOOQ_EOD", bars, warning: `Yahoo was unavailable or stale for ${symbol}; verified Stooq backup was used.` };
     }
@@ -363,7 +363,7 @@ async function getEquityHistory(symbol: string): Promise<{ symbol: string; sourc
 
   // Yahoo exposes two chart hosts. The mirror is useful when one edge/cache is stale.
   try {
-    const bars = await getYahooEquityHistory(symbol, "query2.finance.yahoo.com");
+    const bars = await getYahooEquityHistory(symbol, "query2.finance.yahoo.com", calendarDays);
     if (consider("YAHOO_CHART_DAILY", bars, "Yahoo mirror")) {
       return { symbol, source: "YAHOO_CHART_DAILY", bars, warning: `Yahoo primary was unavailable or stale for ${symbol}; the Yahoo mirror supplied the verified session.` };
     }
@@ -413,7 +413,8 @@ async function getEquityHistory(symbol: string): Promise<{ symbol: string; sourc
   };
 }
 
-export async function getHistory(rawSymbol: string): Promise<{ symbol: string; source: MarketSource; bars: PriceBar[]; warning?: string }> {
+/** calendarDays only extends equity history (replay); Kraken returns at most ~720 daily candles. */
+export async function getHistory(rawSymbol: string, calendarDays: number = ENGINE.historyCalendarDays): Promise<{ symbol: string; source: MarketSource; bars: PriceBar[]; warning?: string }> {
   const symbol = cleanSymbol(rawSymbol);
-  return assetClassForSymbol(symbol) === "CRYPTO" ? getCryptoHistory(symbol) : getEquityHistory(symbol);
+  return assetClassForSymbol(symbol) === "CRYPTO" ? getCryptoHistory(symbol) : getEquityHistory(symbol, calendarDays);
 }
