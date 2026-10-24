@@ -8,10 +8,11 @@ import { trainLearningPolicy } from "@/lib/server/learning";
 import { refreshAgentAttribution } from "@/lib/engine/signal-intelligence";
 import { refreshDiscoveryGovernance } from "@/lib/engine/governance-intelligence";
 import { persistAutomationRun } from "@/lib/server/observatory";
+import { runExecutionCycle, type ExecutionReport } from "@/lib/execution/engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   if (!isCronAuthorized(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
@@ -78,6 +79,16 @@ export async function GET(request: NextRequest) {
       scan.warnings.push(error instanceof Error ? error.message : "Could not update scheduled validation state.");
     }
 
+    // V5.4: broker execution runs only after the scan and validation are persisted, so
+    // today's decision uses the freshest settled evidence. It never throws the cron.
+    phase = "EXECUTE";
+    let execution: ExecutionReport | null = null;
+    try {
+      execution = await runExecutionCycle(scan, scan.validation);
+    } catch (error) {
+      scan.warnings.push(`Execution cycle failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
     phase = "LOG_RUN";
     const degraded = scan.dataHealth.equity.status !== "HEALTHY" || scan.dataHealth.crypto.status !== "HEALTHY" || scan.warnings.length > 0;
     await persistAutomationRun({
@@ -113,6 +124,10 @@ export async function GET(request: NextRequest) {
       trust: scan.validation?.trustScore,
       learningMode: scan.learning?.mode,
       learningSamples: scan.learning?.effectiveSampleCount,
+      executionMode: execution?.decision.mode,
+      executionSubmitted: execution?.submitted.length,
+      executionClosed: execution?.closed.length,
+      executionErrors: execution?.errors.length,
     }));
 
     return NextResponse.json({
@@ -125,6 +140,7 @@ export async function GET(request: NextRequest) {
       settlementWaiting,
       settlementIssues,
       ownerStateLoaded: Boolean(owner.state),
+      execution,
       scan,
     });
   } catch (error) {

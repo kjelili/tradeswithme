@@ -1,14 +1,22 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
+import "./marketing.css";
 
 const siteUrl = "https://tradeswithme.com";
+const title = "TradesWithMe — Trading research with a public forward ledger";
+const description = "Daily stock and crypto research from an autonomous desk. Every call is frozen before the outcome is known and scored after costs on a public ledger — wins and losses.";
+
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: "TradesWithMe V5.2.1 — Edge Diagnostics", template: "%s | TradesWithMe" },
-  description: "A personal autonomous trading research desk with forward validation, bounded learning, quant robustness, prediction-market context, crypto flow intelligence, live Kraken microstructure research and a £50 paper-only overnight cap.",
+  title: { default: title, template: "%s | TradesWithMe" },
+  description,
   alternates: { canonical: "/" },
   icons: { icon: "/tradeswithme-mark.svg" },
-  openGraph: { title: "TradesWithMe V5.2.1 — Edge Diagnostics", description: "Research-only edge diagnostics, strategy discovery, Pareto governance, failure replay, agent influence caps, quant intelligence and forward-validated paper-trading safeguards.", url: siteUrl, siteName: "TradesWithMe", type: "website" },
+  openGraph: { title, description, url: siteUrl, siteName: "TradesWithMe", type: "website", locale: "en_GB" },
+  twitter: { card: "summary", title, description },
 };
-export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) { return <html lang="en"><body>{children}</body></html>; }
+
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  return <html lang="en-GB"><body>{children}</body></html>;
+}
