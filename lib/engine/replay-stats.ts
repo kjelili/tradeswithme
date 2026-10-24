@@ -1,18 +1,19 @@
 // Pure replay types, costs and aggregation. No engine imports, so it is safe to bundle
 // into the client-side replay panel.
 
+import { BROKER_ROUND_TRIP_BPS, ENGINE } from "./config";
 import type { AssetClass, MarketSource } from "./types";
 
-const ROUND_TRIP_LEDGER_BPS = 16; // keep in sync with ENGINE.roundTripCostBps (asserted in tests)
+const ROUND_TRIP_LEDGER_BPS = ENGINE.roundTripCostBps;
 
 export type ReplayCosts = { equityRoundTripBps: number; cryptoRoundTripBps: number };
 
 /**
- * Realistic default costs. Kraken Pro tier-1 taker is 0.80% per side (market buy,
- * market/stop sell) plus ~10 bps slippage; Alpaca US equities are commission-free with
- * a few bps of spread. The forward ledger itself only deducts ROUND_TRIP_LEDGER_BPS.
+ * Realistic costs = the same broker costs the real-money gate uses (config.ts):
+ * Kraken maker entry 0.40% + taker exit 0.80% + slippage; Alpaca ~0.10%.
+ * The forward ledger itself only deducts ROUND_TRIP_LEDGER_BPS.
  */
-export const REALISTIC_COSTS: ReplayCosts = { equityRoundTripBps: 10, cryptoRoundTripBps: 170 };
+export const REALISTIC_COSTS: ReplayCosts = { equityRoundTripBps: BROKER_ROUND_TRIP_BPS.EQUITY, cryptoRoundTripBps: BROKER_ROUND_TRIP_BPS.CRYPTO };
 export const LEDGER_COSTS: ReplayCosts = { equityRoundTripBps: ROUND_TRIP_LEDGER_BPS, cryptoRoundTripBps: ROUND_TRIP_LEDGER_BPS };
 
 export type ReplayTrade = {

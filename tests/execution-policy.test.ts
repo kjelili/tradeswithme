@@ -2,10 +2,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { decideExit, planEntries, readExecutionEnv, resolveMode, userrefFor, clientRefFor, MAX_HARD_CAP_GBP } from "../lib/execution/policy";
 import { signKraken, floorToDecimals } from "../lib/execution/kraken";
-import type { LiveReadiness, OvernightPaperOrder } from "../lib/engine/types";
+import type { OvernightPaperOrder } from "../lib/engine/types";
 
-const validated: LiveReadiness = { status: "VALIDATED", score: 80, reasons: [], completedRequiredForPilot: 0, completedRequiredForValidated: 0 };
-const notReady: LiveReadiness = { ...validated, status: "NOT_READY" };
+const V = { status: "VALIDATED" as const };
+const N = { status: "NOT_READY" as const };
+const validated = { EQUITY: V, CRYPTO: V };
+const notReady = { EQUITY: N, CRYPTO: N };
 const liveEnv = readExecutionEnv({ EXECUTION_MODE: "live", APP_ACCESS_CODE: "x", CRON_SECRET: "y", LIVE_HARD_CAP_GBP: "50" });
 const base = { env: liveEnv, readiness: validated, dbHalted: false, fxVerified: true, realizedLossGbp: 0, unknownBrokerPositions: 0 };
 
@@ -95,4 +97,40 @@ test("Kraken signature matches Kraken's documented example", () => {
 test("lot flooring never rounds up", () => {
   assert.equal(floorToDecimals(0.123456789, 8), 0.12345678);
   assert.equal(floorToDecimals(1.999999, 2), 1.99);
+});
+
+test("LIVE is per asset class at broker costs", () => {
+  const onlyEq = resolveMode({ ...base, readiness: { EQUITY: V, CRYPTO: N } });
+  assert.equal(onlyEq.mode, "LIVE");
+  assert.deepEqual(onlyEq.liveAssetClasses, ["EQUITY"]);
+  const r = planEntries({ ...planBase, liveAssetClasses: new Set(onlyEq.liveAssetClasses), orders: [
+    order({ symbol: "BTC-USD" }),
+    order({ symbol: "BAC", assetClass: "EQUITY", entryUsd: 9, stopUsd: 8.5, targetUsd: 10 }),
+  ] });
+  assert.deepEqual(r.intents.map((i) => i.symbol), ["BAC"]);
+  assert.match(r.skipped[0].reason, /not VALIDATED/);
+  assert.deepEqual(resolveMode({ ...base, readiness: { EQUITY: N, CRYPTO: N } }).liveAssetClasses, []);
+  assert.equal(resolveMode({ ...base, readiness: { EQUITY: N, CRYPTO: N } }).mode, "PAPER");
+});
+test("Kraken entries are maker limits below the plan entry; Alpaca slightly above", () => {
+  const r = planEntries({ ...planBase, orders: [order({ symbol: "ETH-USD", entryUsd: 2000, stopUsd: 1900, targetUsd: 2200 }), order({ symbol: "BAC", assetClass: "EQUITY", entryUsd: 9, stopUsd: 8.5, targetUsd: 10 })] });
+  assert.ok(r.intents[0].limitUsd < 2000);
+  assert.ok(r.intents[1].limitUsd > 9);
+  const tight = planEntries({ ...planBase, orders: [order({ symbol: "X-USD", entryUsd: 100, stopUsd: 99.9, targetUsd: 101 })] });
+  assert.equal(tight.intents.length, 0);
+});
+test("broker-cost readiness: a crypto record that is VALIDATED at ledger cost fails at Kraken cost", async () => {
+  const { executionReadinessFor } = await import("../lib/server/validation");
+  const mk = (i: number, r: number, ac: "CRYPTO" | "EQUITY") => ({ id: i, symbol: "X", assetClass: ac, openedAt: `2026-01-${String(1 + (i % 28)).padStart(2, "0")}T00:00:${String(i % 60).padStart(2, "0")}Z`, entryDate: "", entry: 1, stop: 0.9, target: 1.2, score: 0.5, evidenceScore: 60, confidence: 60, horizonBars: 5, outcome: "TARGET", exitDate: "", exitPrice: 1, returnPct: r, barsHeld: 3, agentSnapshot: [], autopsy: null }) as any;
+  // 120 trades alternating +2.5% / -1.2% after the ledger's 0.16% cost: strong at ledger cost.
+  const trades = Array.from({ length: 120 }, (_, i) => mk(i, i % 5 < 3 ? 2.5 : -1.2, "CRYPTO"));
+  const crypto = executionReadinessFor(trades, "CRYPTO");
+  assert.ok(Math.abs(crypto.expectancyPct - (1.02 + 0.16 - 1.25)) < 1e-3, String(crypto.expectancyPct));
+  assert.equal(crypto.status, "NOT_READY");
+  assert.equal(executionReadinessFor(trades, "EQUITY").completed, 0);
+  assert.equal(executionReadinessFor(trades, "EQUITY").status, "NOT_READY");
+  const eqTrades = trades.map((t: any) => ({ ...t, assetClass: "EQUITY" }));
+  const eq = executionReadinessFor(eqTrades, "EQUITY");
+  assert.equal(eq.costBps, 10);
+  assert.ok(eq.expectancyPct > crypto.expectancyPct);
 });

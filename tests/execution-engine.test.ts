@@ -54,7 +54,8 @@ globalThis.fetch = (async (input: any, init: any = {}) => {
   }
   if (url.host === "api.kraken.com") {
     if (url.pathname === "/0/public/AssetPairs") return json({ error: [], result: { XXBTZUSD: { altname: "XBTUSD", pair_decimals: 1, lot_decimals: 8, ordermin: "0.00005", costmin: "0.5" } } });
-    if (url.pathname === "/0/private/AddOrder") { const p = new URLSearchParams(init.body); calls.push(`KRAKEN validate=${p.get("validate")} close=${p.get("close[ordertype]")}@${p.get("close[price]")} vol=${p.get("volume")}`); return json({ error: [], result: { descr: { order: "buy", close: "close position @ stop loss" } } }); }
+    if (url.pathname === "/0/public/Ticker") return json({ error: [], result: { XXBTZUSD: { c: ["99500.0", "1"] } } });
+    if (url.pathname === "/0/private/AddOrder") { const p = new URLSearchParams(init.body); calls.push(`KRAKEN validate=${p.get("validate")} ${p.get("ordertype")}@${p.get("price")} post=${p.get("oflags")} exp=${p.get("expiretm")} close=${p.get("close[ordertype]")}@${p.get("close[price]")} vol=${p.get("volume")}`); return json({ error: [], result: { descr: { order: "buy", close: "close position @ stop loss" } } }); }
   }
   return json({ error: `unmocked ${url}` }, 599);
 }) as typeof fetch;
@@ -75,7 +76,7 @@ const scan = {
     ],
   },
 } as unknown as ScanResult;
-const notReady = { liveReadiness: { status: "NOT_READY" } } as unknown as ValidationSummary;
+const notReady = { executionReadiness: { EQUITY: { status: "NOT_READY" }, CRYPTO: { status: "NOT_READY" } } } as unknown as ValidationSummary;
 
 test("LIVE request without VALIDATED evidence trades paper only, and is idempotent", async () => {
   process.env.EXECUTION_MODE = "live";
@@ -85,7 +86,8 @@ test("LIVE request without VALIDATED evidence trades paper only, and is idempote
   assert.deepEqual(r1.errors, []);
   assert.equal(r1.submitted.length, 2);
   assert.ok(!calls.some((c) => c.includes("api.alpaca.markets/v2/orders") && !c.includes("paper")), "must never touch live Alpaca");
-  assert.ok(calls.some((c) => c === "KRAKEN validate=true close=stop-loss@95000.4 vol=0.00019940"), calls.filter((c) => c.startsWith("KRAKEN")).join("\n"));
+  // limit = min(plan 100000×0.998, last 99500×0.998) = 99301 floored to 1dp
+  assert.ok(calls.some((c) => c === "KRAKEN validate=true limit@99301 post=post exp=+72000 close=stop-loss@95000.4 vol=0.00020040"), calls.filter((c) => c.startsWith("KRAKEN")).join("\n"));
   const bracket = alpacaOrders[0];
   assert.equal(bracket.order_class, "bracket");
   assert.equal(bracket.stop_loss.stop_price, "9");
@@ -106,7 +108,7 @@ test("broker-side stop fill is recorded as a closed STOP with P&L", async () => 
   const row = db.orders.find((x) => x.symbol === "BAC")!;
   assert.equal(row.status, "CLOSED", JSON.stringify(r));
   assert.equal(row.exit_reason, "STOP");
-  assert.ok(Math.abs(row.pnl_usd - (8.98 - 9.52) * 2) < 1e-9);
+  assert.ok(Math.abs(row.pnl_usd - ((8.98 - 9.52) * 2 - 9.52 * 2 * 10 / 10_000)) < 1e-9, String(row.pnl_usd)); // net of est. fees
 });
 
 test("owner halt blocks new entries; unknown broker positions block entries", async () => {

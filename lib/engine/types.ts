@@ -717,7 +717,19 @@ export type ValidationSummary = {
   recent: ForwardSignal[];
   agents: AgentForwardStat[];
   liveReadiness: LiveReadiness;
+  /** V5.4.2 real-money gate: readiness recomputed at realistic broker costs, per asset class. */
+  executionReadiness: Record<AssetClass, ExecutionReadiness>;
   notes: string[];
+};
+
+export type ExecutionReadiness = LiveReadiness & {
+  assetClass: AssetClass;
+  completed: number;
+  costBps: number;
+  expectancyPct: number;
+  profitFactor: number;
+  maxDrawdownPct: number;
+  trustScore: number;
 };
 
 

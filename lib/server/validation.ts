@@ -1,6 +1,6 @@
-import { ENGINE } from "../engine/config";
+import { BROKER_ROUND_TRIP_BPS, ENGINE } from "../engine/config";
 import { getHistory } from "../engine/market-data";
-import type { AgentForwardStat, ForwardSignal, MicrostructureSignal, QuantRegime, ScanResult, TradeAutopsy, ValidationOutcome, ValidationSummary } from "../engine/types";
+import type { AgentForwardStat, AssetClass, ExecutionReadiness, ForwardSignal, MicrostructureSignal, QuantRegime, ScanResult, TradeAutopsy, ValidationOutcome, ValidationSummary } from "../engine/types";
 import { supabaseConfig, supabaseError, supabaseFetch, supabaseHeaders as headers } from "./supabase";
 
 function round(v: number, d = 2) {
@@ -418,6 +418,50 @@ function agentStats(signals: ForwardSignal[]): AgentForwardStat[] {
 }
 
 
+function trustScoreFor(returns: number[], confidences: number[]) {
+  if (!returns.length) return { trust: 0, avg: 0, pf: 0, dd: 0 };
+  const wins = returns.filter((r) => r > 0).length;
+  const winRatePct = wins / returns.length * 100;
+  const avg = returns.reduce((a, b) => a + b, 0) / returns.length;
+  const gp = returns.filter((r) => r > 0).reduce((a, b) => a + b, 0);
+  const gl = Math.abs(returns.filter((r) => r < 0).reduce((a, b) => a + b, 0));
+  const pf = gl > 0 ? gp / gl : gp > 0 ? 99 : 0;
+  const dd = maxDrawdownFromReturns(returns);
+  const avgConf = confidences.reduce((a, b) => a + b, 0) / Math.max(1, confidences.length);
+  const calib = Math.abs(avgConf - winRatePct);
+  const rawEdge = clamp(50 + avg * 11 + (Math.min(pf, 3) - 1) * 12 + (winRatePct - 50) * 0.18 - dd * 0.9 - calib * 0.12, 0, 100);
+  const sampleWeight = Math.min(1, returns.length / ENGINE.robustTrustSample);
+  let trust = Math.round(15 + sampleWeight * (rawEdge - 15));
+  if (returns.length < ENGINE.minimumTrustSample) trust = Math.min(trust, 44);
+  else if (returns.length < 60) trust = Math.min(trust, 64);
+  else if (returns.length < ENGINE.robustTrustSample) trust = Math.min(trust, 79);
+  return { trust, avg, pf, dd };
+}
+
+/**
+ * The real-money gate. Ledger returns already deduct ENGINE.roundTripCostBps; add that
+ * back and deduct the broker's realistic cost instead, then judge each asset class on
+ * its own evidence (crypto can never ride on equity results, or vice versa).
+ */
+export function executionReadinessFor(completed: ForwardSignal[], assetClass: AssetClass): ExecutionReadiness {
+  const costBps = BROKER_ROUND_TRIP_BPS[assetClass];
+  const subset = completed.filter((s) => s.assetClass === assetClass && s.returnPct != null);
+  const returns = subset.map((s) => (s.returnPct ?? 0) + ENGINE.roundTripCostBps / 100 - costBps / 100);
+  const stats = trustScoreFor(returns, subset.map((s) => s.confidence));
+  const base = liveReadinessFor(returns.length, stats.avg, stats.pf, stats.dd, stats.trust);
+  return {
+    ...base,
+    reasons: [`${assetClass === "CRYPTO" ? "Crypto" : "Equities"} at realistic broker cost (${(costBps / 100).toFixed(2)}% round trip): ${returns.length} settled.`, ...base.reasons],
+    assetClass,
+    completed: returns.length,
+    costBps,
+    expectancyPct: round(stats.avg, 3),
+    profitFactor: round(stats.pf),
+    maxDrawdownPct: round(stats.dd),
+    trustScore: stats.trust,
+  };
+}
+
 function liveReadinessFor(completed: number, expectancyPct: number, profitFactor: number, maxDrawdownPct: number, trustScore: number) {
   const reasons: string[] = [];
   const pilotPass = {
@@ -488,7 +532,7 @@ export async function loadValidationSummary(): Promise<ValidationSummary> {
     `Reported forward returns subtract ${ENGINE.roundTripCostBps} bps round-trip cost, but still do not model every real broker spread, tax or market-impact effect.`,
     "V5 shadow observations can train agent weights but are intentionally excluded from this Forward Trust score; only actionable BUY_SETUP signals count here.",
   ];
-  if (!config) return { configured: false, completed: 0, pending: 0, wins: 0, losses: 0, winRatePct: 0, avgReturnPct: 0, expectancyPct: 0, profitFactor: 0, maxDrawdownPct: 0, trustScore: 0, trustBand: "INSUFFICIENT", calibrationGapPct: null, minimumRobustSample: ENGINE.robustTrustSample, recent: [], agents: [], liveReadiness: liveReadinessFor(0, 0, 0, 0, 0), notes: ["Supabase is not configured, so a tamper-resistant forward ledger cannot accumulate across deployments.", ...baseNotes] };
+  if (!config) return { configured: false, completed: 0, pending: 0, wins: 0, losses: 0, winRatePct: 0, avgReturnPct: 0, expectancyPct: 0, profitFactor: 0, maxDrawdownPct: 0, trustScore: 0, trustBand: "INSUFFICIENT", calibrationGapPct: null, minimumRobustSample: ENGINE.robustTrustSample, recent: [], agents: [], liveReadiness: liveReadinessFor(0, 0, 0, 0, 0), executionReadiness: { EQUITY: executionReadinessFor([], "EQUITY"), CRYPTO: executionReadinessFor([], "CRYPTO") }, notes: ["Supabase is not configured, so a tamper-resistant forward ledger cannot accumulate across deployments.", ...baseNotes] };
 
   const response = await supabaseFetch(`${config.url}/rest/v1/twm_forward_signals?select=*&order=opened_at.desc&limit=500`, { headers: headers(config), cache: "no-store" });
   if (!response.ok) throw new Error(`Validation history read failed (${response.status}). Run supabase/schema.sql for V4.`);
@@ -538,6 +582,7 @@ export async function loadValidationSummary(): Promise<ValidationSummary> {
     recent: signals.slice(0, ENGINE.validationRecentLimit),
     agents: agentStats(completedSignals),
     liveReadiness: liveReadinessFor(completedSignals.length, avgReturnPct, profitFactor, maxDrawdownPct, trustScore),
+    executionReadiness: { EQUITY: executionReadinessFor(completedSignals, "EQUITY"), CRYPTO: executionReadinessFor(completedSignals, "CRYPTO") },
     notes: baseNotes,
   };
 }

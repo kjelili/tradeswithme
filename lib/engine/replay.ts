@@ -2,7 +2,7 @@
 // would have made using only bars available that day (shared decideSymbol core), then
 // simulates the trade the executor would actually place and how it would exit.
 
-import { ENGINE } from "./config";
+import { ENGINE, KRAKEN_MAKER_ENTRY_DISCOUNT } from "./config";
 import { decideSymbol, passesOvernightGate } from "./decision";
 import { eventRiskFor } from "./events";
 import { snapshot } from "./indicators";
@@ -28,7 +28,8 @@ function syntheticQuality(bars: PriceBar[], assetClass: AssetClass): DataQuality
 /**
  * Executable simulation of one entry (what the V5.4 executor does):
  * - Alpaca: limit buy at entry×1.003 on the next bar; bracket stop + target held intraday.
- * - Kraken: market buy at the next bar's open; stop held intraday; target and time exit
+ * - Kraken: post-only limit at min(plan, open)×0.998 placed at the next bar's open; fills
+ *   only if that bar trades down to it (else expires); stop held intraday; target and time exit
  *   are only checked at each daily open (the bot runs once a day).
  * Gaps through a stop fill at the open (worse than the stop). Same-bar stop/target → stop.
  */
@@ -41,7 +42,9 @@ export function simulateExecutable(bars: PriceBar[], signalIndex: number, plan: 
     if (entryBar.low > limit) return null; // limit never filled; executor cancels next cycle
     entry = Math.min(entryBar.open, limit);
   } else {
-    entry = entryBar.open;
+    const limit = Math.min(plan.entry, entryBar.open) * KRAKEN_MAKER_ENTRY_DISCOUNT;
+    if (entryBar.low > limit) return null; // maker limit never touched; expires unfilled
+    entry = limit;
   }
   const { stop, target } = plan;
   if (!(entry > stop)) return null; // gapped below stop before entry; the order would be unprotected → skip

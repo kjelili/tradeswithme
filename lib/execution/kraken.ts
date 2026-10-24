@@ -78,13 +78,19 @@ export function createKrakenClient(fetchImpl: typeof fetch = fetch) {
     openOrders: async (userref: number) => (await priv<{ open: Record<string, KrakenOrderInfo> }>("OpenOrders", { userref })).open ?? {},
     closedOrders: async (userref: number) => (await priv<{ closed: Record<string, KrakenOrderInfo> }>("ClosedOrders", { userref })).closed ?? {},
     cancelByUserref: (userref: number) => priv<{ count: number }>("CancelOrder", { txid: userref }),
-    /** Market buy with a broker-held conditional stop-loss attached to the fill. */
-    buyWithStop: (input: { pair: string; volume: string; stopPrice: string; userref: number; validate: boolean }) =>
+    /**
+     * Post-only limit buy (maker fee) that expires after 20h if unfilled, with a
+     * broker-held conditional stop-loss attached to whatever volume fills.
+     */
+    buyWithStop: (input: { pair: string; volume: string; limitPrice: string; stopPrice: string; userref: number; validate: boolean }) =>
       priv<{ descr: { order: string; close?: string }; txid?: string[] }>("AddOrder", {
         pair: input.pair,
         type: "buy",
-        ordertype: "market",
+        ordertype: "limit",
+        price: input.limitPrice,
         volume: input.volume,
+        oflags: "post",
+        expiretm: "+72000",
         userref: input.userref,
         "close[ordertype]": "stop-loss",
         "close[price]": input.stopPrice,

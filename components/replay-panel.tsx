@@ -134,7 +134,7 @@ export default function ReplayPanel() {
       </div>
       <p className="exec-note">
         Replays every past day with only the bars available that day, applies the live BUY_SETUP + overnight gates, then simulates the orders the executor places
-        (Alpaca bracket limit; Kraken market buy + stop, target/time checked daily; gaps fill at the open). Realistic costs: crypto 1.70% round trip (Kraken tier-1 taker 0.80%/side + slippage), equities 0.10%.
+        (Alpaca bracket limit; Kraken post-only limit 0.2% below market + broker stop, target/time checked daily; gaps fill at the open). Realistic costs = the real-money gate's: crypto 1.25% round trip (Kraken tier-1 0.40% maker in, 0.80% taker out, + slippage), equities 0.10%.
         Not modelled: earnings blocks, correlation to holdings, learned weights. Takes ~10–20 min.
         {running && progress.current ? ` Now: ${progress.current}.` : ""}
       </p>

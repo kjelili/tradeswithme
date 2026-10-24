@@ -56,3 +56,15 @@ export const ENGINE = {
   walkForwardFolds: 4,
   walkForwardTestBars: 50,
 } as const;
+
+/**
+ * Realistic round-trip costs at the brokers the executor uses (V5.4.2).
+ * - EQUITY (Alpaca): commission-free; ~10 bps spread/slippage.
+ * - CRYPTO (Kraken Pro tier 1): post-only limit entry 0.40% maker + stop/market exit
+ *   0.80% taker + ~5 bps slippage = 125 bps.
+ * The real-money gate and the replay use these; the research ledger keeps its own
+ * roundTripCostBps for continuity.
+ */
+export const BROKER_ROUND_TRIP_BPS = { EQUITY: 10, CRYPTO: 125 } as const;
+/** Kraken entries are post-only limits this far below the lower of plan entry and last price. */
+export const KRAKEN_MAKER_ENTRY_DISCOUNT = 0.998;
