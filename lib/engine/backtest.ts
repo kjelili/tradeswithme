@@ -40,7 +40,10 @@ function signalFor(id: StrategyId, bars: PriceBar[], regime: Regime): 0 | 1 {
     const priorHigh = prior.length >= 20 ? Math.max(...prior.slice(-20).map((b) => b.high)) : Infinity;
     return s.close >= priorHigh * 0.995 && (s.volumeRatio20 ?? 1) >= 0.8 ? 1 : 0;
   }
-  const votes = rawVotes(bars, bars.length >= 200 ? detectRegime(bars) : regime);
+  // Point-in-time regime only. Before 200 bars exist the regime is unknowable at that date,
+  // so we use a neutral MIXED regime instead of today's (V5.4 look-ahead fix).
+  void regime;
+  const votes = rawVotes(bars, bars.length >= 200 ? detectRegime(bars) : "MIXED");
   const weighted = votes.reduce((sum, v) => sum + v.score * v.weight, 0) / Math.max(0.0001, votes.reduce((sum, v) => sum + v.weight, 0));
   return weighted >= 0.24 ? 1 : 0;
 }

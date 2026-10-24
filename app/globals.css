@@ -58,3 +58,28 @@
 /* V5.2.1 Edge Diagnostics */
 .edge-diag{margin-top:18px;border-top:1px solid var(--soft);padding-top:18px}.edge-diag-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.edge-diag-head h3{margin:6px 0 0;font-size:18px}.edge-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.edge-box{border:1px solid var(--soft);background:#090e0c;padding:14px}.edge-box.wide{grid-column:1/-1}.edge-table{border:1px solid var(--soft);margin-top:10px;overflow:auto}.edge-row{display:grid;gap:8px;padding:9px 10px;border-bottom:1px solid var(--soft);font-size:8.5px;align-items:center}.edge-row:last-child{border-bottom:0}.edge-row.head{color:#60766b;font:700 8px ui-monospace,monospace;text-transform:uppercase}.edge-table.influence .edge-row{grid-template-columns:1.25fr repeat(4,.65fr) .9fr}.edge-table.clusters .edge-row{grid-template-columns:1.7fr .4fr .5fr .7fr .6fr .6fr}.edge-table.near .edge-row{grid-template-columns:1.45fr .4fr .55fr .55fr .65fr .7fr .7fr 1.4fr;min-width:850px}.diff-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);margin-top:10px}.diff-grid>div,.calibration-kpis>div{background:#0a0f0d;padding:10px}.diff-grid span,.calibration-kpis span{display:block;color:#60766b;font:700 8px ui-monospace,monospace;text-transform:uppercase}.diff-grid b,.calibration-kpis b{display:block;margin-top:5px}.diff-grid small{display:block;color:#60766b;font-size:7px;margin-top:3px}.calibration-kpis{display:grid;grid-template-columns:1.5fr repeat(3,.6fr);gap:1px;background:var(--line);margin-top:10px}.diag-note{color:#809188;font-size:8.5px;line-height:1.5;margin:7px 0 0}
 @media(max-width:950px){.edge-grid{grid-template-columns:1fr}.edge-box.wide{grid-column:auto}.edge-table.influence .edge-row,.edge-table.clusters .edge-row{min-width:620px}.edge-table{overflow:auto}}@media(max-width:650px){.diff-grid{grid-template-columns:1fr 1fr}.calibration-kpis{grid-template-columns:1fr 1fr}}
+
+/* V5.4 broker execution panel */
+.exec-panel{border:1px solid var(--line);background:var(--panel);padding:18px;margin:18px 0}
+.exec-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.exec-eyebrow{margin:0;font:700 9px ui-monospace,monospace;letter-spacing:.12em;color:var(--accent)}
+.exec-head h2{margin:6px 0 0;font-size:22px}
+.exec-mode{font-style:normal;font:800 12px ui-monospace,monospace;padding:3px 8px;margin-left:8px;border:1px solid var(--line);vertical-align:middle}
+.exec-live{color:var(--danger);border-color:var(--danger)!important}.exec-paper{color:var(--blue);border-color:var(--blue)!important}.exec-off{color:var(--muted)}
+.exec-actions{display:flex;gap:8px;flex-wrap:wrap}
+.exec-actions button{background:var(--panel2);border:1px solid var(--line);padding:8px 12px;cursor:pointer;font-weight:700}
+.exec-actions button:disabled{opacity:.5;cursor:default}
+.exec-warn{color:var(--warn)}.exec-danger{color:var(--danger);border-color:#5a2a2a!important}
+.exec-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-top:14px}
+.exec-grid>div{background:var(--panel2);padding:12px}
+.exec-grid span{display:block;font:700 8px ui-monospace,monospace;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+.exec-grid strong{display:block;margin-top:6px;font:800 18px ui-monospace,monospace}
+.exec-small{font-size:11px!important}
+.exec-reasons{margin:14px 0 0;padding-left:18px;color:#a9bdb3;font-size:12px;line-height:1.6}
+.exec-note{color:var(--muted);font-size:12px;margin:12px 0 0}.exec-err{color:var(--danger);font-size:12px}
+.exec-pos{color:var(--accent)}.exec-neg{color:var(--danger)}
+.exec-table-wrap{overflow-x:auto;margin-top:14px;border:1px solid var(--line)}
+.exec-table{width:100%;border-collapse:collapse;font-size:11px;min-width:820px}
+.exec-table th,.exec-table td{padding:7px 9px;border-bottom:1px solid var(--soft);text-align:left;white-space:nowrap}
+.exec-table th{font:700 8px ui-monospace,monospace;letter-spacing:.08em;color:var(--muted);background:#090e0c}
+@media(max-width:800px){.exec-grid{grid-template-columns:1fr 1fr}}
