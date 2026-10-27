@@ -92,3 +92,72 @@ test("monthly alert: starting positions once, then once per new month, plus dail
   const flipped = planStrategyAlert({ ...newMonth.next, dailyTrend: { QQQ: 1 } }, { ...report, asOf: "2026-10-30" }, new Date("2026-11-04T02:20:00Z"));
   assert.equal(flipped.send, true); assert.ok(flipped.lines.some((l) => /flipped/.test(l)));
 });
+
+// ---------- V5.8 ----------
+import { toGbp, runTranched } from "../lib/engine/allocation";
+import { buildCurrencyReport } from "../lib/engine/allocation-report";
+
+function wide(over: Partial<Record<string, number[]>> = {}): AlignedSeries {
+  const base = series(over);
+  return { dates: base.dates, close: { ...base.close,
+    VT: over.VT ?? path(N, 7, 0.0004, 0.018), EFA: over.EFA ?? path(N, 8, 0.0003, 0.018), IEF: over.IEF ?? path(N, 9, 0.0001, 0.006),
+    VNQ: over.VNQ ?? path(N, 10, 0.0003, 0.022), DBC: over.DBC ?? path(N, 11, 0.0001, 0.018) } };
+}
+
+test("V5.8 strategies have no look-ahead", () => {
+  const a = wide();
+  const cutoffIdx = 1100;
+  const alter = (x: number[], seed: number) => [...x.slice(0, cutoffIdx), ...path(N - cutoffIdx, seed, -0.01, 0.03).map((v) => v * x[cutoffIdx - 1] / 100)];
+  const b = wide({ SPY: alter(a.close.SPY, 90), EFA: alter(a.close.EFA, 91), DBC: alter(a.close.DBC, 92), QQQ: alter(a.close.QQQ, 93) });
+  for (const id of ["blend_spy_rot", "gtaa5", "tsmom_ivol", "voltarget_spy", "ensemble"]) {
+    const s = def(id);
+    for (let k = 300; k < cutoffIdx; k += 41) assert.deepEqual(s.decide(k, a), s.decide(k, b), `${id} at ${k}`);
+  }
+});
+
+test("V5.8 weights are valid (non-negative, sum to 1)", () => {
+  const a = wide();
+  for (const id of ["blend_spy_rot", "gtaa5", "tsmom_ivol", "voltarget_spy", "ensemble"]) {
+    for (let k = 300; k < N; k += 97) {
+      const w = def(id).decide(k, a)!;
+      const sum = Object.values(w).reduce((x, y) => x + y, 0);
+      assert.ok(Object.values(w).every((v) => v >= 0), id);
+      assert.ok(Math.abs(sum - 1) < 1e-6, `${id} sums to ${sum}`);
+    }
+  }
+});
+
+test("tranching averages sleeves; offset 0 equals the plain run", () => {
+  const a = wide();
+  const d = def("ensemble_tranched");
+  const plain = runStrategy({ ...d, tranches: undefined }, a, 260, a.dates[1100])!;
+  const one = runTranched({ ...d, tranches: [0] }, a, 260, a.dates[1100])!;
+  assert.equal(one.full.cagrPct, plain.full.cagrPct);
+  const four = runTranched(d, a, 260, a.dates[1100])!;
+  assert.ok(four.full.switchesPerYear > 0);
+});
+
+test("toGbp: keeps dates, divides risk assets by USD/GBP, leaves cash alone", () => {
+  const s: AlignedSeries = { dates: ["2020-01-02", "2020-01-03", "2020-01-06"], close: { SPY: [100, 100, 125], BIL: [1, 1, 1] } };
+  const g = toGbp(s, [{ date: "2020-01-03", rate: 1.25 }, { date: "2020-01-06", rate: 1.25 }])!;
+  assert.deepEqual(g.dates, s.dates);
+  assert.deepEqual(g.close.SPY, [80, 80, 100]);
+  assert.deepEqual(g.close.BIL, [1, 1, 1]);
+  assert.equal(toGbp(s, []), null);
+});
+
+test("GBP pricing never changes positions — only returns", () => {
+  const usd = wide();
+  const fx = usd.dates.map((date, i) => ({ date, rate: 1.3 + 0.1 * Math.sin(i / 60) }));
+  const gbp = toGbp(usd, fx)!;
+  const a = buildCurrencyReport("USD", usd, null, { bootstrapPaths: 50 })!;
+  const b = buildCurrencyReport("GBP", usd, null, { bootstrapPaths: 50, pricing: { etf: gbp } })!;
+  for (const r of a.results) {
+    const o = b.results.find((x) => x.id === r.id)!;
+    assert.deepEqual(o.holding, r.holding, r.id);
+  }
+  assert.notEqual(a.results[0].full.cagrPct, b.results[0].full.cagrPct);
+  assert.equal(a.grid.length, 12);
+  assert.ok(a.results.every((r) => !("daily" in r)), "raw arrays stripped from output");
+  assert.ok(a.trials >= a.results.length + 12);
+});

@@ -157,3 +157,20 @@
 .alloc-legend b{color:var(--text);font-family:ui-monospace,monospace;margin-left:4px}
 .alloc-date{margin-left:auto;color:var(--muted);font-family:ui-monospace,monospace}
 @media(max-width:1000px){.alloc-cards{grid-template-columns:1fr 1fr}}@media(max-width:560px){.alloc-cards{grid-template-columns:1fr}}
+/* V5.8 strategies v2 + rebalance */
+.alloc-toggle{display:inline-flex;border:1px solid var(--line)}
+.alloc-toggle button{border:0!important;background:transparent!important;padding:8px 10px!important}
+.alloc-toggle button.on{background:var(--accent)!important;color:#04130b}
+.alloc-main tbody tr{cursor:pointer}
+.alloc-main tbody tr:hover td{background:#0d1512}
+.alloc-sel td{background:#0f1a16!important}
+.alloc-sel td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.alloc-detail{margin-top:16px}
+.alloc-detail h3{font-size:13px;margin:0 0 4px}
+.alloc-years{min-width:0}
+.alloc-grid{min-width:0;max-width:560px}
+.alloc-grid small{color:var(--muted)}
+.alloc-plateau{background:rgba(25,158,112,.16)}
+.rb-approve{background:var(--accent)!important;color:#04130b;border-color:var(--accent)!important}
+.rb-plan{margin-top:6px}
+.rb-plan b,.rb-plan td:first-child{font-family:ui-monospace,monospace;text-transform:none}

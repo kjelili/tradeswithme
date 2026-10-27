@@ -1,11 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { describeWeights, UCITS_EQUIVALENT, type StrategyResult, type Weights } from "@/lib/engine/allocation";
+import { describeWeights, UCITS_EQUIVALENT, type Weights } from "@/lib/engine/allocation";
+import type { CurrencyReport, PublicResult } from "@/lib/engine/allocation-report";
 import { FEATURED } from "@/lib/engine/strategy-alert";
 
 const ACCESS_KEY = "twm-v3-access";
-type Report = { asOf: string; start: string; cutoff: string; results: StrategyResult[]; warnings: string[]; error?: string };
+type Report = { asOf: string; start: string; cutoff: string; results: PublicResult[]; usd?: CurrencyReport; gbp?: CurrencyReport | null; warnings: string[]; error?: string };
 
 function code() {
   try { return window.sessionStorage.getItem(ACCESS_KEY) ?? ""; } catch { return ""; }
@@ -13,9 +14,9 @@ function code() {
 const pct = (v: number) => `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
 const cls = (v: number) => (v > 0 ? "exec-pos" : v < 0 ? "exec-neg" : "");
 
-// Categorical slots 1–4 (dark steps), assigned in fixed order to the featured strategies.
+// Categorical slots 1–4 (dark steps), assigned in fixed order.
 const SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500"];
-const CHART_IDS = ["hold_spy", "trend200_monthly", "dual_mom_cash", "rot_top2_12"];
+const CHART_IDS = ["hold_spy", "hold_global", "blend_spy_rot", "ensemble"];
 
 function Implementation({ w }: { w: Weights }) {
   return (
@@ -25,9 +26,9 @@ function Implementation({ w }: { w: Weights }) {
   );
 }
 
-function Curves({ results }: { results: StrategyResult[] }) {
+function Curves({ results, currency }: { results: PublicResult[]; currency: string }) {
   const [hover, setHover] = useState<number | null>(null);
-  const series = CHART_IDS.map((id, i) => ({ r: results.find((x) => x.id === id), color: SERIES[i] })).filter((s) => s.r) as Array<{ r: StrategyResult; color: string }>;
+  const series = CHART_IDS.map((id, i) => ({ r: results.find((x) => x.id === id), color: SERIES[i] })).filter((s) => s.r) as Array<{ r: PublicResult; color: string }>;
   if (!series.length) return null;
   const n = Math.min(...series.map((s) => s.r.curve.length));
   const W = 720, H = 220, PL = 8, PR = 8, PT = 10, PB = 10;
@@ -38,7 +39,7 @@ function Curves({ results }: { results: StrategyResult[] }) {
   const at = hover ?? n - 1;
   return (
     <figure className="replay-curve">
-      <figcaption>Growth of £1 (USD proxies, after costs) · {series[0].r.curve[0]?.date} → {series[0].r.curve[n - 1]?.date}</figcaption>
+      <figcaption>Growth of {currency === "GBP" ? "£1 (in pounds)" : "$1 (in dollars)"}, after costs · {series[0].r.curve[0]?.date} → {series[0].r.curve[n - 1]?.date}</figcaption>
       <div className="alloc-legend">
         {series.map((s) => (
           <span key={s.r.id}><i style={{ background: s.color }} />{s.r.name} <b>{s.r.curve[at]?.equity.toFixed(2)}×</b></span>
@@ -67,9 +68,68 @@ function Curves({ results }: { results: StrategyResult[] }) {
   );
 }
 
+function Detail({ r }: { r: PublicResult }) {
+  const rb = r.robustness;
+  if (!rb) return null;
+  const b = rb.bootstrap;
+  return (
+    <div className="alloc-detail">
+      <h3>{r.name} — year by year vs the S&amp;P 500</h3>
+      <div className="exec-table-wrap">
+        <table className="exec-table alloc-years">
+          <thead><tr><th>Year</th>{rb.years.map((y) => <th key={y.year}>{y.year}</th>)}</tr></thead>
+          <tbody>
+            <tr><td><b>Strategy</b></td>{rb.years.map((y) => <td key={y.year} className={cls(y.pct)}>{pct(y.pct)}</td>)}</tr>
+            <tr><td>S&amp;P 500</td>{rb.years.map((y) => <td key={y.year} className={cls(y.spyPct)}>{pct(y.spyPct)}</td>)}</tr>
+            <tr><td>Difference</td>{rb.years.map((y) => <td key={y.year} className={cls(y.pct - y.spyPct)}>{pct(y.pct - y.spyPct)}</td>)}</tr>
+          </tbody>
+        </table>
+      </div>
+      {b && (
+        <p className="exec-note">
+          Resampled {b.paths.toLocaleString()} alternative {b.years}-year histories from real months (strategy and S&amp;P moved together):
+          beat the S&amp;P in <b>{b.pBeatPct}%</b>; yearly gap median <b className={cls(b.medianCagrDiffPct)}>{pct(b.medianCagrDiffPct)}</b> (90% range {pct(b.cagrDiff5Pct)} to {pct(b.cagrDiff95Pct)});
+          fell more than {b.ddThresholdPct}% at some point in <b>{b.pDrawdownOverPct}%</b> of histories vs <b>{b.pBenchDrawdownOverPct}%</b> for the S&amp;P.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function Grid({ rep }: { rep: CurrencyReport }) {
+  if (!rep.grid.length) return null;
+  const looks = [...new Set(rep.grid.map((g) => g.lookbackMonths))];
+  const tops = [...new Set(rep.grid.map((g) => g.topN))];
+  const best = Math.max(...rep.grid.map((g) => g.sharpe));
+  return (
+    <div className="alloc-detail">
+      <h3>Is the rotation setting a plateau or a lucky peak?</h3>
+      <p className="exec-note">Best-N-of-5 rotation with every lookback / N combination. Each cell: Sharpe (10y) · held-out /yr. Green = within 80% of the best. <b>{rep.plateauPct}%</b> of settings are on the plateau — the higher, the less the result depends on picking the exact setting.</p>
+      <div className="exec-table-wrap">
+        <table className="exec-table alloc-grid">
+          <thead><tr><th>Hold best</th>{looks.map((l) => <th key={l}>{l}-month</th>)}</tr></thead>
+          <tbody>
+            {tops.map((t) => (
+              <tr key={t}>
+                <td><b>{t}</b></td>
+                {looks.map((l) => {
+                  const g = rep.grid.find((x) => x.lookbackMonths === l && x.topN === t);
+                  return <td key={l} className={g && g.sharpe >= best * 0.8 ? "alloc-plateau" : ""}>{g ? <>{g.sharpe.toFixed(2)}<small> · {pct(g.testCagrPct)}</small></> : "—"}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function StrategiesPanel() {
   const [report, setReport] = useState<Report | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ccy, setCcy] = useState<"USD" | "GBP">("GBP");
+  const [selected, setSelected] = useState<string>("ensemble");
 
   const load = useCallback(async (refresh = false) => {
     setBusy(true);
@@ -81,9 +141,13 @@ export default function StrategiesPanel() {
   }, []);
   useEffect(() => { if (code()) void load(); }, [load]);
 
-  const spy = report?.results.find((r) => r.id === "hold_spy");
-  const ranked = useMemo(() => [...(report?.results ?? [])].sort((a, b) => b.train.sharpe - a.train.sharpe), [report]);
-  const featured = FEATURED.map((id) => report?.results.find((r) => r.id === id)).filter(Boolean) as StrategyResult[];
+  const rep: CurrencyReport | null = (ccy === "GBP" ? report?.gbp : report?.usd) ?? report?.usd ?? null;
+  const shownCcy = rep?.currency ?? "USD";
+  const results = rep?.results ?? report?.results ?? [];
+  const spy = results.find((r) => r.id === "hold_spy");
+  const ranked = useMemo(() => [...results].sort((a, b) => b.train.sharpe - a.train.sharpe), [results]);
+  const featured = FEATURED.map((id) => results.find((r) => r.id === id)).filter(Boolean) as PublicResult[];
+  const sel = results.find((r) => r.id === selected) ?? featured[0];
 
   return (
     <section className="exec-panel">
@@ -92,15 +156,23 @@ export default function StrategiesPanel() {
           <p className="exec-eyebrow">MONEY WHILE YOU SLEEP · SIMPLE RULES · CHECK ONCE A MONTH · ISA-FRIENDLY</p>
           <h2>Simple allocation strategies</h2>
         </div>
-        <div className="exec-actions"><button onClick={() => void load(true)} disabled={busy}>{busy ? "Loading ~10 years…" : report ? "Refresh" : "Load strategies"}</button></div>
+        <div className="exec-actions">
+          <div className="alloc-toggle" role="group" aria-label="Currency">
+            {(["GBP", "USD"] as const).map((c) => (
+              <button key={c} className={ccy === c ? "on" : ""} onClick={() => setCcy(c)} disabled={c === "GBP" && report != null && !report.gbp}>{c === "GBP" ? "£ GBP" : "$ USD"}</button>
+            ))}
+          </div>
+          <button onClick={() => void load(true)} disabled={busy}>{busy ? "Loading ~10 years…" : report ? "Refresh" : "Load strategies"}</button>
+        </div>
       </div>
       <p className="exec-note">
-        Ten years of daily prices, textbook rules (no tuning), 0.05% cost per trade, decisions made at a close and applied from the next day.
-        “Held-out” = the last 2 years. The nightly job emails the month&apos;s positions on the first run of each month (and when the daily 200-day rule flips).
-        Tested in USD on US-listed funds; UK trackers in GBP also move with the exchange rate. Research, not financial advice.
+        Ten years of daily prices, textbook rules from published research (no tuning), 0.05% cost per trade, decisions made at a close and applied from the next day.
+        “Held-out” = the last 2 years. <b>£ GBP</b> converts every fund into pounds with daily ECB exchange rates — what a UK investor holding unhedged trackers actually got.
+        Signals are always decided on the US prices, so positions are identical in both views. Research, not financial advice.
       </p>
       {report?.error && <p className="exec-err">{report.error}</p>}
-      {report && !report.error && <>
+      {report && !report.error && rep && <>
+        {ccy === "GBP" && !report.gbp && <p className="exec-err">GBP view unavailable (exchange-rate history did not load) — showing USD.</p>}
         <div className="alloc-cards">
           {featured.map((r) => (
             <article key={r.id} className="alloc-card">
@@ -108,37 +180,51 @@ export default function StrategiesPanel() {
               <p className="alloc-now"><span>Hold now</span><b>{describeWeights(r.holding)}</b><small>since {r.holdingSince}</small></p>
               {describeWeights(r.ifCheckedToday) !== describeWeights(r.holding) && <p className="alloc-flag">If the month ended today: <b>{describeWeights(r.ifCheckedToday)}</b></p>}
               <Implementation w={r.holding} />
-              <p className="alloc-meta">10y: {pct(r.full.cagrPct)}/yr · worst drop {r.full.maxDrawdownPct}% · held-out {pct(r.test.cagrPct)}/yr</p>
+              <p className="alloc-meta">10y: {pct(r.full.cagrPct)}/yr · worst drop {r.full.maxDrawdownPct}% · held-out {pct(r.test.cagrPct)}/yr{r.robustness?.bootstrap ? ` · beat S&P in ${r.robustness.bootstrap.pBeatPct}% of resampled decades` : ""}</p>
             </article>
           ))}
         </div>
-        <Curves results={report.results} />
+        <Curves results={results} currency={shownCcy} />
         <div className="exec-table-wrap">
-          <table className="exec-table">
-            <thead><tr><th>Strategy</th><th>10y /yr</th><th>Worst drop</th><th>Sharpe</th><th>Worst year</th><th>Trades /yr</th><th>Invested</th><th>Held-out /yr</th><th>Held-out drop</th><th>vs S&amp;P held-out</th></tr></thead>
+          <table className="exec-table alloc-main">
+            <thead><tr>
+              <th>Strategy</th><th>10y /yr</th><th>Worst drop</th><th>Sharpe</th><th>Worst year</th><th>Trades /yr</th><th>Invested</th>
+              <th>Held-out /yr</th><th>vs S&amp;P held-out</th>
+              <th title="Share of full calendar years this strategy returned more than the S&P 500">Years beat S&amp;P</th>
+              <th title="Paired block bootstrap: share of 1,000 resampled 10-year histories in which it ended ahead of the S&P 500">P(beat S&amp;P, 10y)</th>
+              <th title="Deflated Sharpe ratio: probability the Sharpe is real after counting every rule and setting we tried. ≥0.95 is strong evidence.">Deflated Sharpe</th>
+            </tr></thead>
             <tbody>
-              {ranked.map((r) => (
-                <tr key={r.id} title={r.caveat ?? r.description}>
-                  <td><b>{r.name}</b>{r.caveat ? " ⚠" : ""}</td>
-                  <td className={cls(r.full.cagrPct)}>{pct(r.full.cagrPct)}</td>
-                  <td>{r.full.maxDrawdownPct}%</td>
-                  <td>{r.full.sharpe.toFixed(2)}</td>
-                  <td className={cls(r.full.worstYearPct)}>{pct(r.full.worstYearPct)}</td>
-                  <td>{r.full.switchesPerYear}</td>
-                  <td>{r.full.riskOnPct}%</td>
-                  <td className={cls(r.test.cagrPct)}>{pct(r.test.cagrPct)}</td>
-                  <td>{r.test.maxDrawdownPct}%</td>
-                  <td className={cls(r.test.cagrPct - (spy?.test.cagrPct ?? 0))}>{spy ? pct(r.test.cagrPct - spy.test.cagrPct) : "—"}</td>
-                </tr>
-              ))}
+              {ranked.map((r) => {
+                const rb = r.robustness;
+                return (
+                  <tr key={r.id} title={r.caveat ?? r.description} className={sel?.id === r.id ? "alloc-sel" : ""} onClick={() => setSelected(r.id)}>
+                    <td><b>{r.name}</b>{r.caveat ? " ⚠" : ""}</td>
+                    <td className={cls(r.full.cagrPct)}>{pct(r.full.cagrPct)}</td>
+                    <td>{r.full.maxDrawdownPct}%</td>
+                    <td>{r.full.sharpe.toFixed(2)}</td>
+                    <td className={cls(r.full.worstYearPct)}>{pct(r.full.worstYearPct)}</td>
+                    <td>{r.full.switchesPerYear}</td>
+                    <td>{r.full.riskOnPct}%</td>
+                    <td className={cls(r.test.cagrPct)}>{pct(r.test.cagrPct)}</td>
+                    <td className={cls(r.test.cagrPct - (spy?.test.cagrPct ?? 0))}>{spy && r.id !== "hold_spy" ? pct(r.test.cagrPct - spy.test.cagrPct) : "—"}</td>
+                    <td>{rb && r.id !== "hold_spy" ? `${rb.yearsBeatSpyPct}%` : "—"}</td>
+                    <td>{rb?.bootstrap ? `${rb.bootstrap.pBeatPct}%` : "—"}</td>
+                    <td className={rb ? (rb.dsr >= 0.95 ? "exec-pos" : rb.dsr < 0.5 ? "exec-neg" : "") : ""}>{rb ? rb.dsr.toFixed(2) : "—"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+        <p className="exec-note">Click a row for its year-by-year record and resampling test.</p>
+        {sel && <Detail r={sel} />}
+        <Grid rep={rep} />
         <ul className="exec-reasons">
-          <li>Period {report.start} → {report.asOf}; held-out from {report.cutoff}. Sorted by risk-adjusted return (Sharpe) on the years before the held-out period.</li>
+          <li>Period {rep.start} → {rep.asOf}; held-out from {rep.cutoff}. Sorted by Sharpe on the years before the held-out period. Deflated Sharpe counts {rep.trials} rules and settings tried.</li>
           {ranked.filter((r) => r.caveat).map((r) => <li key={r.id}>⚠ {r.name}: {r.caveat}</li>)}
           {report.warnings.map((w) => <li key={w} className="exec-neg">{w}</li>)}
-          <li>Honest reading: trend and momentum rules usually trail buy-and-hold in strong bull markets and earn their keep by cutting long, deep falls. Pick one by the worst drop you could sit through, then stick to it — switching rules after a bad month is how most people lose.</li>
+          <li>How to choose: pick the rule whose <b>worst drop</b> you could sit through without selling, prefer a high <b>P(beat S&amp;P)</b> or a lower drop for similar return, and treat a Deflated Sharpe below 0.5 as “could be luck”. Then stick to it — switching rules after a bad month is how most people lose.</li>
         </ul>
       </>}
     </section>

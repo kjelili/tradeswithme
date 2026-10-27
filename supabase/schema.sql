@@ -270,3 +270,22 @@ alter table public.twm_strategy_signal enable row level security;
 -- V5.7 adds the "audit" interest (Strategy audit offer).
 alter table public.twm_waitlist drop constraint if exists twm_waitlist_interest_check;
 alter table public.twm_waitlist add constraint twm_waitlist_interest_check check (interest in ('free','founder','setup','audit'));
+
+-- V5.8 Trading 212 ISA rebalance plans (propose → approve → execute; never retried automatically).
+create table if not exists public.twm_rebalance_plan (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  month text not null,
+  env text not null check (env in ('demo','live')),
+  strategy text not null,
+  status text not null check (status in ('PROPOSED','EXECUTING','EXECUTED','PARTIAL','FAILED','CANCELLED','BLOCKED')),
+  as_of text,
+  targets jsonb not null default '{}'::jsonb,
+  plan jsonb not null,
+  results jsonb,
+  error text,
+  executed_at timestamptz,
+  auto boolean not null default false
+);
+create index if not exists twm_rebalance_plan_month_idx on public.twm_rebalance_plan (month, created_at desc);
+alter table public.twm_rebalance_plan enable row level security;

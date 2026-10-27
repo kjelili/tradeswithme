@@ -103,3 +103,42 @@ The improvement lab returned **NO EDGE** for the signal engine (all 27 variants 
 Public site: new **Strategy audit (£99, `STRIPE_AUDIT_LINK`)** — you run a customer's rules through the replay/lab and send the verdict. The Founding member plan now promises monthly rules-based allocation signals instead of daily trade ideas (the lab showed those have no edge).
 
 Migration: re-run `supabase/schema.sql` (adds `twm_strategy_signal`, widens `twm_waitlist.interest` to include `audit`).
+
+## V5.8 — Robust allocation, GBP view, Trading 212 ISA rebalancer
+
+The aim moved from "find the best line" to "find rules that are still good after we count how hard we looked".
+
+**New strategies** (all monthly, all from published research, no tuning):
+
+| id | Rule | Source |
+|---|---|---|
+| `hold_global` | 100% global all-cap tracker (VT ≈ VWRP) | the diversified benchmark |
+| `blend_spy_rot` | 50% S&P 500 always + 50% best-2-of-5 rotation | — |
+| `gtaa5` | US / intl shares, 7–10y Treasuries, property, commodities: 20% each while above its 10-month average, else cash | Faber (2007) |
+| `tsmom_ivol` | 8 asset classes, inverse-volatility slices, held while 12-month return beats cash | Moskowitz, Ooi & Pedersen (2012) |
+| `voltarget_spy` | S&P 500 exposure = 15% ÷ last month's volatility (max 100%) | Moreira & Muir (2017) |
+| `ensemble` | Equal blend of 200-day trend, rotation, GTAA, multi-asset trend, vol-managed S&P | diversification across rules |
+| `ensemble_tranched` | The ensemble in 4 sleeves rebalanced on different weeks | Hoffstein (rebalance timing luck) |
+
+**Robustness columns** (`lib/engine/robustness.ts`, `allocation-report.ts`):
+
+- **Years beat S&P** — share of full calendar years ahead of the S&P 500. Click a row for the year table.
+- **P(beat S&P, 10y)** — paired 21-day block bootstrap: 1,000 alternative decades built from real months, strategy and S&P resampled together. Also reports the chance of a >30% fall.
+- **Deflated Sharpe** — Bailey & López de Prado: probability the Sharpe is real after counting *every* rule and grid setting tried (27+). ≥0.95 strong; <0.5 could be luck.
+- **Plateau grid** — rotation with every lookback (3/6/9/12m) × top-N (1/2/3). If only one cell is good, the result is a lucky peak.
+
+**GBP view.** Daily ECB USD/GBP (Frankfurter) converts every fund into pounds. Decisions are still made on USD prices, so positions are identical; only returns change. Cash keeps the T-bill return as a stand-in for GBP cash interest.
+
+**Featured cards / monthly email** now show: Ensemble, 50/50 blend, best-2-of-5 rotation, global tracker.
+
+### Trading 212 ISA rebalance assistant (`/desk` → ISA rebalance assistant)
+
+1. In the Trading 212 app: Settings → API (beta). Create a key on your **practice (demo)** account first, scopes: account, portfolio, metadata, orders:execute. The API cannot withdraw.
+2. Set `T212_API_KEY`, `T212_API_SECRET`, `T212_ENV=demo`, `REBALANCE_STRATEGY` (default `ensemble`).
+3. Set `T212_TICKER_MAP` — every US proxy the strategy can hold → your Trading 212 ticker. The plan **blocks** if a needed proxy is missing or a ticker isn't in your instrument list. The ensemble needs SPY, QQQ, EEM, GLD, TLT, EFA, IEF, VNQ, DBC (BIL = cash, no mapping). Rotation-only strategies need SPY, QQQ, EEM, GLD, TLT. Check every ticker in the app (they look like `VUAGl_EQ`).
+4. Re-run `supabase/schema.sql` (adds `twm_rebalance_plan`).
+5. "Make plan now" reads cash + positions and shows target vs now, drift and orders. **Approve & send** places sells, waits, re-reads cash, then buys sized to what's actually available.
+
+Safety: only mapped instruments are touched; drifts under `REBALANCE_BAND_PCT` (3%) are skipped; per-order cap `REBALANCE_MAX_ORDER` (code ceiling 25,000); optional `REBALANCE_BUDGET`; plans expire after 6 h and can run once (conditional status update); never retried; `TRADING_KILL_SWITCH` and the desk Halt block it. Instruments you don't hold yet are listed as a one-off **manual** buy (the API gives no safe price for them); after that, rebalances are automatic.
+
+Schedule: `/api/cron/rebalance` runs weekdays 10:40 UTC (London open in both GMT and BST). Default: proposes the month's plan once and emails it. `REBALANCE_AUTO=on`: executes it without approval (max 3 attempts per month, stops once EXECUTED). Run a full month on demo before `T212_ENV=live`.
