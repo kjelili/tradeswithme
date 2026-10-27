@@ -9,6 +9,7 @@ import { refreshAgentAttribution } from "@/lib/engine/signal-intelligence";
 import { refreshDiscoveryGovernance } from "@/lib/engine/governance-intelligence";
 import { persistAutomationRun } from "@/lib/server/observatory";
 import { runExecutionCycle, type ExecutionReport } from "@/lib/execution/engine";
+import { runStrategyAlerts } from "@/lib/server/strategy-alerts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,6 +88,14 @@ export async function GET(request: NextRequest) {
       execution = await runExecutionCycle(scan, scan.validation);
     } catch (error) {
       scan.warnings.push(`Execution cycle failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    // V5.7: monthly allocation signal email (and daily 200-day flips). Never fails the cron.
+    phase = "STRATEGY_SIGNAL";
+    try {
+      await runStrategyAlerts();
+    } catch (error) {
+      scan.warnings.push(`Strategy signal failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     phase = "LOG_RUN";

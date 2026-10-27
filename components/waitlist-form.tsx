@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-type Props = { interest?: "free" | "founder" | "setup"; source?: string; cta?: string };
+type Props = { interest?: "free" | "founder" | "setup" | "audit"; source?: string; cta?: string };
 
 export default function WaitlistForm({ interest = "free", source = "home", cta = "Join free" }: Props) {
   const [email, setEmail] = useState("");
@@ -24,7 +24,7 @@ export default function WaitlistForm({ interest = "free", source = "home", cta =
       const data = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Something went wrong.");
       setState("done");
-      setMessage(interest === "free" ? "You're in. First weekly results email lands on Monday." : "Seat reserved. We'll email you first when checkout opens.");
+      setMessage(interest === "free" ? "You're in. First weekly results email lands on Monday." : interest === "audit" ? "Got it. We'll email you within one working day to collect your rules." : "Seat reserved. We'll email you first when checkout opens.");
     } catch (error) {
       setState("error");
       setMessage(error instanceof Error ? error.message : "Something went wrong.");

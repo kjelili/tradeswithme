@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,24}$/i;
-const INTERESTS = new Set(["free", "founder", "setup"]);
+const INTERESTS = new Set(["free", "founder", "setup", "audit"]);
 
 // Best-effort per-instance throttle. Not a security boundary; it stops casual floods.
 const hits = new Map<string, { count: number; resetAt: number }>();

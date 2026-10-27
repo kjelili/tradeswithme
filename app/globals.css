@@ -139,3 +139,21 @@
 .lab-promising_not_proven{color:var(--warn);border-color:var(--warn)!important}
 .lab-no_edge{color:var(--danger);border-color:var(--danger)!important}
 @media(max-width:900px){.lab-grid{grid-template-columns:1fr 1fr}}
+
+/* V5.7 allocation strategies */
+.alloc-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:14px}
+.alloc-card{background:var(--panel2);border:1px solid var(--line);padding:12px}
+.alloc-card h3{margin:0 0 8px;font-size:13px}
+.alloc-now span{display:block;font:700 8px ui-monospace,monospace;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.alloc-now b{display:block;font:800 16px ui-monospace,monospace;margin-top:4px;color:var(--text)}
+.alloc-now small{color:var(--muted);font-size:10px}
+.alloc-now{margin:0 0 8px}
+.alloc-flag{margin:0 0 8px;font-size:11px;color:var(--warn)}
+.alloc-impl{list-style:none;margin:0 0 8px;padding:0;font-size:11px;color:#a9bdb3}
+.alloc-impl b{color:var(--text)}
+.alloc-meta{margin:0;font-size:10px;color:var(--muted)}
+.alloc-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:11px;color:#b9cbc2;margin-bottom:8px}
+.alloc-legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.alloc-legend b{color:var(--text);font-family:ui-monospace,monospace;margin-left:4px}
+.alloc-date{margin-left:auto;color:var(--muted);font-family:ui-monospace,monospace}
+@media(max-width:1000px){.alloc-cards{grid-template-columns:1fr 1fr}}@media(max-width:560px){.alloc-cards{grid-template-columns:1fr}}

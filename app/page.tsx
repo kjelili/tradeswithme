@@ -70,7 +70,7 @@ export default async function Home() {
         <div className="mk-plans">
           {site.plans.map((plan) => (
             <article key={plan.id} className={`mk-plan${plan.highlight ? " mk-plan-hi" : ""}`}>
-              {plan.highlight && <span className="mk-badge">Founding offer</span>}
+              {plan.highlight && <span className="mk-badge">Start here</span>}
               <h3>{plan.name}</h3>
               <p className="mk-price"><strong>{plan.price}</strong> <span>{plan.cadence}</span></p>
               <p className="mk-plan-blurb">{plan.blurb}</p>
@@ -89,7 +89,8 @@ export default async function Home() {
         <h2>Questions</h2>
         <details><summary>Is this financial advice?</summary><p>No. TradesWithMe is general, non-personalised research and an educational paper ledger. It does not know your circumstances and never places trades for you.</p></details>
         <details><summary>Does it guarantee profits?</summary><p>No. The whole point is to measure whether an edge exists, honestly. Some periods will lose. The ledger shows that too.</p></details>
-        <details><summary>What is in the daily brief?</summary><p>The desk&apos;s ranked watchlist, the setups that cleared its evidence gates, near-miss candidates, the market regime and data-health status — the same research the owner reviews each morning.</p></details>
+        <details><summary>What do members get?</summary><p>A monthly email with the positions of a few simple, rules-based allocation strategies (trend-following, dual momentum, ETF rotation), their 10-year and held-out results, and access to the research lab. The same rules, applied the same way, every month.</p></details>
+        <details><summary>What is a strategy audit?</summary><p>You send your trading rules. We replay them day by day on real prices with realistic fees, compare every trade with simply holding the index over the same dates, and judge the result on a year the rules never saw. You get a plain-English verdict: edge, promising, or no edge — and why.</p></details>
         <details><summary>Can I cancel?</summary><p>Yes, any time, from the link in your receipt email. Founding pricing ends if you cancel.</p></details>
         <details><summary>Who builds it?</summary><p>An independent UK-based engineer and programme manager, building in public with a forward ledger instead of screenshots.</p></details>
       </section>

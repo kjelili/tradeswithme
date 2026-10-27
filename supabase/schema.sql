@@ -256,3 +256,17 @@ create table if not exists public.twm_activity_log (
 );
 create index if not exists twm_activity_log_run_idx on public.twm_activity_log (run_at desc, id desc);
 alter table public.twm_activity_log enable row level security;
+
+-- V5.7 monthly allocation signal state (single row, id = 'owner').
+create table if not exists public.twm_strategy_signal (
+  id text primary key,
+  month text,
+  holdings jsonb not null default '{}'::jsonb,
+  daily_trend jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.twm_strategy_signal enable row level security;
+
+-- V5.7 adds the "audit" interest (Strategy audit offer).
+alter table public.twm_waitlist drop constraint if exists twm_waitlist_interest_check;
+alter table public.twm_waitlist add constraint twm_waitlist_interest_check check (interest in ('free','founder','setup','audit'));

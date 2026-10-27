@@ -4,6 +4,7 @@ import ExecutionPanel from "@/components/execution-panel";
 import ReplayPanel from "@/components/replay-panel";
 import DeskInsights from "@/components/desk-insights";
 import LabPanel from "@/components/lab-panel";
+import StrategiesPanel from "@/components/strategies-panel";
 
 export const metadata: Metadata = {
   title: "Owner desk",
@@ -14,7 +15,7 @@ export default function DeskPage() {
   return (
     <>
       <Dashboard />
-      <div className="shell"><ExecutionPanel /><DeskInsights /><ReplayPanel /><LabPanel /></div>
+      <div className="shell"><StrategiesPanel /><ExecutionPanel /><DeskInsights /><ReplayPanel /><LabPanel /></div>
     </>
   );
 }

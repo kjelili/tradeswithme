@@ -17,7 +17,7 @@ function safeUrl(value: string) {
 }
 
 export type Plan = {
-  id: "free" | "founder" | "setup";
+  id: "free" | "founder" | "setup" | "audit";
   name: string;
   price: string;
   cadence: string;
@@ -31,6 +31,7 @@ export type Plan = {
 export function siteConfig() {
   const founderLink = safeUrl(env("STRIPE_FOUNDER_LINK"));
   const setupLink = safeUrl(env("STRIPE_SETUP_LINK"));
+  const auditLink = safeUrl(env("STRIPE_AUDIT_LINK"));
   const founderSeats = Number.parseInt(env("FOUNDER_SEATS", "100"), 10) || 100;
 
   const plans: Plan[] = [
@@ -49,21 +50,37 @@ export function siteConfig() {
       checkoutUrl: "",
     },
     {
+      id: "audit",
+      name: "Strategy audit",
+      price: env("AUDIT_PRICE", "£99"),
+      cadence: "one-off",
+      blurb: "Find out if your trading rules actually beat just holding the index — before you risk more money.",
+      features: [
+        "Your rules replayed on 3+ years of real prices",
+        "Realistic broker fees and gap fills",
+        "Scored against holding the index on the same dates",
+        "Judged on a held-out year it never saw",
+        "Plain-English verdict in 5 working days",
+      ],
+      cta: auditLink ? "Book a strategy audit" : "Request a strategy audit",
+      checkoutUrl: auditLink,
+      highlight: true,
+    },
+    {
       id: "founder",
       name: "Founding member",
       price: env("FOUNDER_PRICE", "£19"),
       cadence: "per month",
-      blurb: `Daily research brief from the full desk. Price locked for the first ${founderSeats} members.`,
+      blurb: `Monthly rules-based allocation signals and the full research lab. Price locked for the first ${founderSeats} members.`,
       features: [
-        "Morning research brief (stocks + crypto)",
-        "Ranked watchlist with evidence scores",
-        "Near-miss cohort and regime notes",
-        "Full forward ledger incl. open setups",
+        "Monthly allocation signal by email",
+        "Trend, dual-momentum and rotation rules",
+        "10-year and held-out results, updated monthly",
+        "Every rule's losing years shown, not hidden",
         "Cancel any time",
       ],
       cta: founderLink ? "Become a founding member" : "Reserve a founding seat",
       checkoutUrl: founderLink,
-      highlight: true,
     },
     {
       id: "setup",

@@ -90,3 +90,16 @@ The first real replay (Oct 2023 – Oct 2026) showed 44 trades at +0.46% after c
 - **Sizing:** share of the winner's stock trades that cannot buy one whole share at £50 / 3 slots, and the cap that would cover 90%. Alpaca fractional shares only support *day* orders (no brackets), so fractional execution would need the stop re-placed every morning before the open.
 
 Only change the live config to a lab variant if it earns `EDGE HOLDS OUT OF SAMPLE` — and then still paper-trade it first.
+
+## V5.7 — Simple allocation strategies + monthly signal email
+
+The improvement lab returned **NO EDGE** for the signal engine (all 27 variants negative after costs on the held-out year; best training variant −0.04% vs SPY). V5.7 adds the alternative the evidence favoured: simple, textbook, once-a-month rules an individual can run in a Stocks & Shares ISA.
+
+- `/desk` → **Simple allocation strategies** (top of the desk): hold S&P 500; S&P 500 above its 200-day average (monthly / daily); dual momentum (US vs emerging, else cash or long bonds); rotation among S&P 500, Nasdaq-100, emerging, gold, long Treasuries (top 1 or 2, 6- or 12-month); and watchlist stock momentum (flagged: survivorship bias).
+- ~10 years of daily data, 0.05% per unit of turnover, decide at a close → apply from the next day (a test proves no look-ahead). Held-out = last 2 years. Ranked by Sharpe on the training years.
+- Cards show **Hold now**, "if the month ended today", and example UCITS (LSE) equivalents for an ISA. Results are USD on US-listed proxies; GBP holders also carry FX moves.
+- The nightly cron emails starting positions once, then the month's positions on the first run of each month, and an alert whenever the daily 200-day rule flips. Needs `RESEND_API_KEY` + `ALERT_EMAIL` and the `twm_strategy_signal` table.
+
+Public site: new **Strategy audit (£99, `STRIPE_AUDIT_LINK`)** — you run a customer's rules through the replay/lab and send the verdict. The Founding member plan now promises monthly rules-based allocation signals instead of daily trade ideas (the lab showed those have no edge).
+
+Migration: re-run `supabase/schema.sql` (adds `twm_strategy_signal`, widens `twm_waitlist.interest` to include `audit`).
