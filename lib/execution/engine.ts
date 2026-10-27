@@ -6,6 +6,9 @@ import { resolveKrakenPairForSymbol } from "@/lib/engine/market-data";
 import type { ScanResult, ValidationSummary } from "@/lib/engine/types";
 import { createAlpacaClient, type AlpacaClient } from "./alpaca";
 import { sendAlert } from "./alerts";
+import { readFilterFlags } from "@/lib/engine/edge";
+import { buildActivity, buildFunnel, buildRationale, type Funnel, type TradeRationale } from "@/lib/engine/funnel";
+import { persistActivity } from "@/lib/server/activity";
 import { createKrakenClient, floorToDecimals, roundToDecimals, type KrakenClient } from "./kraken";
 import { claimOrder, loadActiveOrders, loadExecState, realizedLossGbp, saveExecState, updateOrder, type ExecOrder, type ExitReason } from "./ledger";
 import { clientRefFor, decideExit, planEntries, readExecutionEnv, resolveMode, userrefFor, type Broker, type ExecutionMode, type ModeDecision } from "./policy";
@@ -19,6 +22,7 @@ export type ExecutionReport = {
   closed: string[];
   skipped: Array<{ symbol: string; reason: string }>;
   errors: string[];
+  funnel?: Funnel;
 };
 
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
@@ -167,7 +171,15 @@ async function unknownAlpacaPositions(mode: LedgerMode) {
 
 // ---------- Entry ----------
 
-async function submitEntry(mode: LedgerMode, scanAt: string, usdPerGbp: number, intent: ReturnType<typeof planEntries>["intents"][number]) {
+async function finishReport(scan: ScanResult, report: ExecutionReport, state: { halted: boolean; reason: string | null } | null) {
+  report.funnel = buildFunnel(scan, report);
+  const lines = buildActivity(scan, report.funnel, report);
+  const current = state ?? await loadExecState().catch(() => null);
+  await saveExecState({ halted: current?.halted ?? false, reason: current?.reason ?? null, last_run: report }).catch(() => undefined);
+  await persistActivity(scan.at, lines).catch((e) => console.warn("Activity log not saved", e instanceof Error ? e.message : e));
+}
+
+async function submitEntry(mode: LedgerMode, scanAt: string, usdPerGbp: number, intent: ReturnType<typeof planEntries>["intents"][number], rationale: TradeRationale) {
   const clientRef = clientRefFor(intent.symbol, scanAt, mode);
   const userref = userrefFor(clientRef);
   let brokerSymbol = intent.symbol;
@@ -201,6 +213,7 @@ async function submitEntry(mode: LedgerMode, scanAt: string, usdPerGbp: number, 
     broker: intent.broker, mode, symbol: intent.symbol, broker_symbol: brokerSymbol, client_ref: clientRef, userref,
     status: "PENDING_SUBMIT", qty, limit_usd: limit, stop_usd: stop, target_usd: intent.targetUsd,
     notional_usd: qty * limit, notional_gbp: (qty * limit) / usdPerGbp, usd_per_gbp: usdPerGbp, detail: null,
+    rationale: { ...rationale, plan: { ...rationale.plan, entry: limit, stop } },
   });
   if (!claimed) return null; // already handled for this symbol/day/mode
 
@@ -235,6 +248,8 @@ export async function runExecutionCycle(scan: ScanResult, validation: Validation
   const report: ExecutionReport = { at: now.toISOString(), decision: { mode: "OFF", newEntriesAllowed: false, liveAssetClasses: [], reasons: [] }, submitted: [], closed: [], skipped: [], errors: [] };
   if (env.requestedMode === "OFF") {
     report.decision = { mode: "OFF", newEntriesAllowed: false, liveAssetClasses: [], reasons: ["EXECUTION_MODE is off."] };
+    // Still publish the funnel + activity log so the desk explains every research run.
+    await finishReport(scan, report, null);
     return report;
   }
 
@@ -272,11 +287,18 @@ export async function runExecutionCycle(scan: ScanResult, validation: Validation
       openSymbols: new Set(active.map((o) => o.symbol)),
       brokersAvailable: brokers,
       liveAssetClasses: mode === "LIVE" ? new Set(decision.liveAssetClasses) : undefined,
+      filters: readFilterFlags(),
+      winStats: {
+        EQUITY: validation?.executionReadiness ? { wins: validation.executionReadiness.EQUITY.wins, n: validation.executionReadiness.EQUITY.completed } : undefined,
+        CRYPTO: validation?.executionReadiness ? { wins: validation.executionReadiness.CRYPTO.wins, n: validation.executionReadiness.CRYPTO.completed } : undefined,
+      },
+      runUpPct: Object.fromEntries((scan.analyses ?? []).map((a) => [a.symbol, a.indicators.return5Pct])),
     });
     report.skipped.push(...skipped);
     for (const intent of intents) {
       try {
-        const line = await submitEntry(mode, scan.at, fx.rate, intent);
+        const analysis = (scan.analyses ?? []).find((a) => a.symbol === intent.symbol);
+        const line = await submitEntry(mode, scan.at, fx.rate, intent, buildRationale(analysis, intent));
         if (line) report.submitted.push(line);
       } catch (error) {
         report.errors.push(`${intent.symbol} entry: ${error instanceof Error ? error.message : String(error)}`);
@@ -284,7 +306,7 @@ export async function runExecutionCycle(scan: ScanResult, validation: Validation
     }
   }
 
-  await saveExecState({ halted: state.halted, reason: state.reason, last_run: report }).catch(() => undefined);
+  await finishReport(scan, report, state);
   if (report.submitted.length || report.closed.length || report.errors.length) {
     await sendAlert(
       `${decision.mode}: ${report.submitted.length} new, ${report.closed.length} closed${report.errors.length ? `, ${report.errors.length} error(s)` : ""}`,

@@ -223,12 +223,12 @@ export default function Dashboard() {
   return (
     <main className="shell">
       <header className="topbar">
-        <div className="brand-wrap"><div className="logo-mark"><span>T</span></div><div><div className="brand">TRADES<span>WITHME</span></div><div className="tagline">EDGE DIAGNOSTICS · V5.2.1</div></div></div>
+        <div className="brand-wrap"><div className="logo-mark"><span>T</span></div><div><div className="brand">TRADES<span>WITHME</span></div><div className="tagline">OWNER DESK · V5.5 EVIDENCE-GATED AUTOPILOT</div></div></div>
         <div className="header-actions"><span className="status-pill"><i /> PERSONAL MODE</span><span className="mode-pill">OVERNIGHT PAPER · £50 HARD CAP</span></div>
       </header>
 
       <section className="hero-row">
-        <div><p className="eyebrow">AUTONOMOUS LEARNING OBSERVATORY · DAILY SCAN · FORWARD VALIDATION · DRIFT CONTROL · STOCKS + CRYPTO</p><h1>Prove the edge<br/><em>before risking capital.</em></h1><p className="hero-copy">V5.2.1 adds research-only edge diagnostics—agent influence caps, loss clustering, winner/loser differentials, stop/horizon calibration and near-miss cohorts—on top of Discovery & Governance: each scheduled cycle settles mature observations, retrains the bounded learner, scans verified markets with the fresh policy, and freezes new evidence for future scoring. Safety gates and the £50 paper-only cap remain outside the learner.</p></div>
+        <div><p className="eyebrow">AUTONOMOUS LEARNING OBSERVATORY · DAILY SCAN · FORWARD VALIDATION · DRIFT CONTROL · STOCKS + CRYPTO</p><h1>Prove the edge<br/><em>before risking capital.</em></h1><p className="hero-copy">V5.5 adds research-only edge diagnostics—agent influence caps, loss clustering, winner/loser differentials, stop/horizon calibration and near-miss cohorts—on top of Discovery & Governance: each scheduled cycle settles mature observations, retrains the bounded learner, scans verified markets with the fresh policy, and freezes new evidence for future scoring. Safety gates and the £50 paper-only cap remain outside the learner.</p></div>
         <div className="command-card">
           <label>Personal access code <small>Required only when APP_ACCESS_CODE is configured in Vercel.</small><input type="password" value={accessCode} onChange={(e) => setAccessCode(e.target.value)} placeholder="••••••••••" /></label>
           <button className="run-btn" onClick={() => void loadObservatory()} disabled={observatoryLoading}>{observatoryLoading ? "Refreshing observatory…" : "Refresh autonomous desk"}</button>
@@ -245,7 +245,7 @@ export default function Dashboard() {
       </section>
 
       <section className="panel health-panel">
-        <div className="panel-head"><div><span className="section-kicker">DATA INTEGRITY</span><h2>Market data health</h2></div><span className="mini-tag">V5.2.1 FAIL-CLOSED</span></div>
+        <div className="panel-head"><div><span className="section-kicker">DATA INTEGRITY</span><h2>Market data health</h2></div><span className="mini-tag">V5.5 FAIL-CLOSED</span></div>
         {!scan?.dataHealth ? <div className="empty-state mini">The autonomous cycle verifies every upstream feed before the decision engine is allowed to act.</div> : <div className="health-grid">
           <HealthCard name="US equities + ETFs" item={scan.dataHealth.equity} />
           <HealthCard name="Crypto" item={scan.dataHealth.crypto} />
@@ -292,8 +292,8 @@ export default function Dashboard() {
           <div className="panel-head"><div><span className="section-kicker">WHILE I SLEEP</span><h2>£50 evidence-gated paper desk</h2></div><span className="mini-tag">NO LIVE ORDERS</span></div>
           {!overnight ? <div className="empty-state compact">The next autonomous cycle will build the overnight paper plan.</div> : <div className="overnight-body">
             <div className="budget-bar"><div><span>Allocated</span><strong>{pounds(overnight.allocatedGbp)}</strong></div><div><span>Cash left</span><strong>{pounds(overnight.remainingGbp)}</strong></div><div><span>GBP/USD reference</span><strong>{overnight.fx.rate.toFixed(4)}</strong><small>{overnight.fx.source}</small></div></div>
-            {!overnight.orders.length ? <div className="empty-state mini">No candidate cleared all V5.2.1 evidence, event, data-quality, learning and diversification gates. Cash stays unallocated.</div> : <div className="overnight-orders">{overnight.orders.map((o) => <div className="overnight-order" key={o.symbol}><div><b>{o.symbol}</b><small>{o.assetClass} · evidence {o.evidenceScore}/100</small></div><span><small>Paper allocation</small><b>{pounds(o.notionalGbp)}</b></span><span><small>Units</small><b>{unitsText(o.units, o.assetClass === "CRYPTO")}</b></span><span><small>Confidence</small><b>{o.confidence}%</b></span><p>{o.rationale}</p></div>)}</div>}
-            <p className="safety-note">V5.2.1 will not spend simply because budget exists. It can leave all £50 idle. This remains a paper allocation until you separately decide to place a real order.</p>
+            {!overnight.orders.length ? <div className="empty-state mini">No candidate cleared all V5.5 evidence, event, data-quality, learning and diversification gates. Cash stays unallocated.</div> : <div className="overnight-orders">{overnight.orders.map((o) => <div className="overnight-order" key={o.symbol}><div><b>{o.symbol}</b><small>{o.assetClass} · evidence {o.evidenceScore}/100</small></div><span><small>Paper allocation</small><b>{pounds(o.notionalGbp)}</b></span><span><small>Units</small><b>{unitsText(o.units, o.assetClass === "CRYPTO")}</b></span><span><small>Confidence</small><b>{o.confidence}%</b></span><p>{o.rationale}</p></div>)}</div>}
+            <p className="safety-note">V5.5 will not spend simply because budget exists. It can leave all £50 idle. This remains a paper allocation until you separately decide to place a real order.</p>
           </div>}
         </article>
 
@@ -333,13 +333,13 @@ export default function Dashboard() {
         <article className="panel">
           <div className="panel-head"><div><span className="section-kicker">MY POSITIONS</span><h2>Correlation-aware exposure</h2></div><span className="mini-tag">SYNCED ON SCAN</span></div>
           <div className="holding-form"><input placeholder="AAPL" value={newSymbol} onChange={(e) => setNewSymbol(e.target.value)} /><input type="number" step="any" placeholder="Qty" value={newQty} onChange={(e) => setNewQty(e.target.value)} /><input type="number" step="any" placeholder="Avg price" value={newAvg} onChange={(e) => setNewAvg(e.target.value)} /><button onClick={addHolding}>Add holding</button></div>
-          {!positions.length ? <div className="empty-state mini">Add holdings so V5.2.1 can measure candidate correlation against exposure you already own. Use “Sync for automation” after changing holdings so the scheduled cycle uses them.</div> : <div className="holdings">{positions.map((p) => { const last = priceMap.get(p.symbol) ?? p.avgPrice; const pnl = p.qty * (last - p.avgPrice); return <div className="holding-row" key={p.symbol}><b>{p.symbol}</b><span>{p.qty} units</span><span>{money(last, 2)}</span><span className={pnl >= 0 ? "up" : "down"}>{pnl >= 0 ? "+" : ""}{money(pnl)}</span><button onClick={() => setPositions((old) => old.filter((x) => x.symbol !== p.symbol))}>×</button></div>; })}</div>}
+          {!positions.length ? <div className="empty-state mini">Add holdings so V5.5 can measure candidate correlation against exposure you already own. Use “Sync for automation” after changing holdings so the scheduled cycle uses them.</div> : <div className="holdings">{positions.map((p) => { const last = priceMap.get(p.symbol) ?? p.avgPrice; const pnl = p.qty * (last - p.avgPrice); return <div className="holding-row" key={p.symbol}><b>{p.symbol}</b><span>{p.qty} units</span><span>{money(last, 2)}</span><span className={pnl >= 0 ? "up" : "down"}>{pnl >= 0 ? "+" : ""}{money(pnl)}</span><button onClick={() => setPositions((old) => old.filter((x) => x.symbol !== p.symbol))}>×</button></div>; })}</div>}
         </article>
       </section>
 
       <section className="panel lab-panel">
         <div className="panel-head"><div><span className="section-kicker">STRATEGY LAB</span><h2>Out-of-sample + rolling walk-forward validation</h2></div><span className="mini-tag">NO SINGLE-PERIOD HEROES</span></div>
-        {!lab ? <div className="empty-state compact">Choose a symbol above and run Strategy Lab. V5.2.1 checks the held-out tail and multiple rolling forward windows.</div> : <StrategyLab lab={lab} />}
+        {!lab ? <div className="empty-state compact">Choose a symbol above and run Strategy Lab. V5.5 checks the held-out tail and multiple rolling forward windows.</div> : <StrategyLab lab={lab} />}
       </section>
 
       <section className="panel memory-panel">
@@ -348,7 +348,7 @@ export default function Dashboard() {
       </section>
 
       {scan?.warnings?.length ? <section className="warning-strip"><b>Validation / data warnings</b>{scan.warnings.map((w, i) => <span key={i}>{w}</span>)}</section> : null}
-      <footer><p>TradesWithMe V5.2.1 is a personal adaptive research, forward-validation and risk-planning tool. The £50 overnight feature is paper-only and does not place broker orders. The learner may reweight research agents and calibrate confidence, but it cannot change the £50 cap, risk rules, data/event gates or place live orders. A high evidence, learning or trust score is not a promise of profit.</p><span>TRADESWITHME.COM · V5.2.1 EDGE DIAGNOSTICS</span></footer>
+      <footer><p>TradesWithMe V5.5 is a personal adaptive research, forward-validation and risk-planning tool. Broker execution is off unless EXECUTION_MODE is set, and real money unlocks only per asset class after VALIDATED evidence at realistic broker costs (see the Autopilot panel). The learner may reweight research agents and calibrate confidence, but it cannot change the £50 cap, risk rules, data/event gates or place live orders. A high evidence, learning or trust score is not a promise of profit.</p><span>TRADESWITHME.COM · V5.5 EDGE DIAGNOSTICS</span></footer>
     </main>
   );
 }
@@ -393,7 +393,7 @@ function SignalIntelligenceDesk({ scan }: { scan: ScanResult }) {
       <div><span>Coverage score</span><strong>{summary.averageCoverageScore}/100</strong><small>research context coverage, not edge</small></div>
     </div>
     <div className="signal-grid">
-      <div className="signal-box"><div className="subhead">TOP CANDIDATE SIGNAL CONTEXT</div><div className="signal-table"><div className="signal-head"><span>Symbol</span><span>Flow</span><span>Event market</span><span>Microstructure</span><span>Research tilt</span></div>{rows.map((a) => { const si = a.signalIntelligence!; return <div className="signal-row" key={a.symbol}><b>{a.symbol}</b><span>{si.onChain.status}<small>{si.onChain.source.replaceAll("_", " ")} · {si.onChain.score}/100</small></span><span>{si.predictionMarket.status === "MATCHED" ? `${si.predictionMarket.probabilityPct?.toFixed(0)}%` : si.predictionMarket.status}<small>{si.predictionMarket.marketQuestion ? `${si.predictionMarket.marketQuestion.slice(0, 42)} · rel ${si.predictionMarket.relevanceScore}` : "no strict entity match"}</small></span><span>{si.microstructure.score}/100<small>{si.microstructure.liveBookVerified ? `${si.microstructure.spreadBps?.toFixed(1)} bps live spread` : si.microstructure.source.replaceAll("_", " ")}</small></span><span className={si.researchTilt > 0.12 ? "up" : si.researchTilt < -0.12 ? "down" : ""}>{scoreText(si.researchTilt)}</span></div>; })}</div><p className="muted-copy">Signal Intelligence is deliberately research-only in V5.2.1. Prediction markets now require strict entity/token matches. It cannot create BUY_SETUPs, change risk caps or bypass Forward Trust.</p></div>
+      <div className="signal-box"><div className="subhead">TOP CANDIDATE SIGNAL CONTEXT</div><div className="signal-table"><div className="signal-head"><span>Symbol</span><span>Flow</span><span>Event market</span><span>Microstructure</span><span>Research tilt</span></div>{rows.map((a) => { const si = a.signalIntelligence!; return <div className="signal-row" key={a.symbol}><b>{a.symbol}</b><span>{si.onChain.status}<small>{si.onChain.source.replaceAll("_", " ")} · {si.onChain.score}/100</small></span><span>{si.predictionMarket.status === "MATCHED" ? `${si.predictionMarket.probabilityPct?.toFixed(0)}%` : si.predictionMarket.status}<small>{si.predictionMarket.marketQuestion ? `${si.predictionMarket.marketQuestion.slice(0, 42)} · rel ${si.predictionMarket.relevanceScore}` : "no strict entity match"}</small></span><span>{si.microstructure.score}/100<small>{si.microstructure.liveBookVerified ? `${si.microstructure.spreadBps?.toFixed(1)} bps live spread` : si.microstructure.source.replaceAll("_", " ")}</small></span><span className={si.researchTilt > 0.12 ? "up" : si.researchTilt < -0.12 ? "down" : ""}>{scoreText(si.researchTilt)}</span></div>; })}</div><p className="muted-copy">Signal Intelligence is deliberately research-only in V5.5. Prediction markets now require strict entity/token matches. It cannot create BUY_SETUPs, change risk caps or bypass Forward Trust.</p></div>
       <div className="signal-box"><div className="subhead">AGENT ATTRIBUTION</div>{summary.attribution.map((a) => <div className="attrib-row" key={a.id}><div><b>{a.name}</b><small>{a.actionableCompleted} actionable completed · {a.status}</small></div><span><small>Reliability</small><b>{a.reliabilityScore == null ? "—" : `${a.reliabilityScore.toFixed(0)}/100`}</b></span><span><small>Directional edge</small><b className={(a.directionalEdgePct ?? 0) >= 0 ? "up" : "down"}>{a.directionalEdgePct == null ? "—" : pct(a.directionalEdgePct, 2)}</b></span><span><small>Forward avg</small><b className={(a.actionableAvgReturnPct ?? 0) >= 0 ? "up" : "down"}>{a.actionableAvgReturnPct == null ? "—" : pct(a.actionableAvgReturnPct, 2)}</b></span></div>)}<div className="signal-notes">{summary.notes.slice(0,3).map((n) => <p key={n}>• {n}</p>)}</div></div>
     </div>
   </div>;
@@ -405,7 +405,7 @@ function HealthCard({ name, item }: { name: string; item: { status: string; veri
 
 
 function ObservatoryDesk({ observatory }: { observatory: LearningObservatory }) {
-  if (!observatory.configured) return <div className="validation-warning">Supabase is not configured. Run the V5.2.1 schema so autonomous runs, pending observations and training history can persist.</div>;
+  if (!observatory.configured) return <div className="validation-warning">Supabase is not configured. Run the V5.5 schema so autonomous runs, pending observations and training history can persist.</div>;
   const last = observatory.lastRun;
   return <div className="observatory-body">
     <div className="observatory-stats">
@@ -425,7 +425,7 @@ function ObservatoryDesk({ observatory }: { observatory: LearningObservatory }) 
       </div>
       <div>
         <div className="subhead">RECENT AUTONOMOUS RUNS</div>
-        {!observatory.recentRuns.length ? <p className="muted-copy">The Vercel cron has not logged a V5.2.1 cycle yet. The first run is scheduled automatically.</p> : <div className="automation-run-list">{observatory.recentRuns.slice(0, 6).map((run) => <div className="automation-run" key={run.id}><div><b className={run.status === "FAILED" ? "down" : "up"}>{run.status}</b><small>{new Date(run.ranAt).toLocaleString()}</small>{run.detail ? <small className={run.status === "FAILED" ? "down" : ""}>{run.detail}</small> : null}</div><span>settled {run.actionableSettled + run.shadowSettled}</span><span>frozen {run.actionableInserted + run.shadowInserted}</span><span>{run.learningMode ?? "—"} · {run.effectiveSamples ?? 0} eff.</span></div>)}</div>}
+        {!observatory.recentRuns.length ? <p className="muted-copy">The Vercel cron has not logged a V5.5 cycle yet. The first run is scheduled automatically.</p> : <div className="automation-run-list">{observatory.recentRuns.slice(0, 6).map((run) => <div className="automation-run" key={run.id}><div><b className={run.status === "FAILED" ? "down" : "up"}>{run.status}</b><small>{new Date(run.ranAt).toLocaleString()}</small>{run.detail ? <small className={run.status === "FAILED" ? "down" : ""}>{run.detail}</small> : null}</div><span>settled {run.actionableSettled + run.shadowSettled}</span><span>frozen {run.actionableInserted + run.shadowInserted}</span><span>{run.learningMode ?? "—"} · {run.effectiveSamples ?? 0} eff.</span></div>)}</div>}
       </div>
     </div>
     {observatory.tradeGate ? <div className="trade-gate-observatory">
@@ -437,7 +437,7 @@ function ObservatoryDesk({ observatory }: { observatory: LearningObservatory }) 
         <div><span>AVOID</span><strong>{observatory.tradeGate.avoids}</strong></div>
       </div>
       {!observatory.tradeGate.topBlockers.length ? <p className="muted-copy">No trade blockers were recorded in the latest autonomous scan.</p> : <div className="trade-gate-list">{observatory.tradeGate.topBlockers.map((b) => <div className="trade-gate-row" key={b.reason}><b>{b.reason.replaceAll("_", " ")}</b><span>{b.count} assets</span><span>{b.pct.toFixed(1)}%</span></div>)}</div>}
-      <p className="muted-copy">This panel explains why candidates did not become actionable setups. It is diagnostic only; V5.2.1 does not lower safety thresholds automatically.</p>
+      <p className="muted-copy">This panel explains why candidates did not become actionable setups. It is diagnostic only; V5.5 does not lower safety thresholds automatically.</p>
     </div> : null}
     <div className="lab-notes">{observatory.notes.map((note) => <p key={note}>• {note}</p>)}{observatory.ownerStateUpdatedAt && <p>• Automation settings last synced {new Date(observatory.ownerStateUpdatedAt).toLocaleString()}.</p>}</div>
   </div>;
@@ -457,7 +457,7 @@ function LearningDesk({ learning }: { learning: LearningPolicy }) {
     </div>
     <div className="learning-grid">
       <div><div className="subhead">GLOBAL STRATEGY WEIGHTS</div><div className="learning-agent-table">{segment.agents.map((a) => <div className="learning-agent-row" key={a.id}><div><b>{a.name}</b><small>{a.observations} observations · reliability {a.reliabilityScore.toFixed(0)}/100</small></div><span><small>base</small><b>{(a.baseWeight * 100).toFixed(0)}%</b></span><span><small>learned</small><b>{(a.learnedWeight * 100).toFixed(1)}%</b></span><span><small>directional edge</small><b className={a.avgDirectionalReturnPct >= 0 ? "up" : "down"}>{pct(a.avgDirectionalReturnPct, 2)}</b></span></div>)}</div></div>
-      <div className="learning-segments"><div className="subhead">SEGMENT MEMORY</div>{([learning.segments.EQUITY, learning.segments.CRYPTO] as const).map((s) => <div className="learning-segment" key={s.key}><b>{s.key}</b><span>{s.sampleCount} completed</span><span>{s.winRatePct.toFixed(1)}% win</span><span className={s.avgReturnPct >= 0 ? "up" : "down"}>{pct(s.avgReturnPct, 2)} expectancy</span></div>)}<p>V5.2.1 uses shrinkage toward the original weights. It does not let a small lucky sample take over the ensemble.</p><div className="recovery-box"><div className="subhead">RECOVERY CRITERIA</div><div className="recovery-status"><b>{learning.recovery?.status ?? "NOT NEEDED"}</b><span>{learning.recovery?.positiveWindowStreak ?? 0}/{learning.recovery?.requiredPositiveWindows ?? 2} positive low-drift windows</span></div>{(learning.recovery?.reasons ?? []).slice(0,4).map((reason) => <p key={reason}>• {reason}</p>)}</div></div>
+      <div className="learning-segments"><div className="subhead">SEGMENT MEMORY</div>{([learning.segments.EQUITY, learning.segments.CRYPTO] as const).map((s) => <div className="learning-segment" key={s.key}><b>{s.key}</b><span>{s.sampleCount} completed</span><span>{s.winRatePct.toFixed(1)}% win</span><span className={s.avgReturnPct >= 0 ? "up" : "down"}>{pct(s.avgReturnPct, 2)} expectancy</span></div>)}<p>V5.5 uses shrinkage toward the original weights. It does not let a small lucky sample take over the ensemble.</p><div className="recovery-box"><div className="subhead">RECOVERY CRITERIA</div><div className="recovery-status"><b>{learning.recovery?.status ?? "NOT NEEDED"}</b><span>{learning.recovery?.positiveWindowStreak ?? 0}/{learning.recovery?.requiredPositiveWindows ?? 2} positive low-drift windows</span></div>{(learning.recovery?.reasons ?? []).slice(0,4).map((reason) => <p key={reason}>• {reason}</p>)}</div></div>
     </div>
     <div className="lab-notes">{learning.notes.map((note) => <p key={note}>• {note}</p>)}<p>• A newly trained policy affects the next scan; current displayed candidates may have been scored by the previously stored policy.</p></div>
   </div>;
@@ -465,7 +465,7 @@ function LearningDesk({ learning }: { learning: LearningPolicy }) {
 
 function ValidationDesk({ validation }: { validation: ValidationSummary }) {
   const readiness = validation.liveReadiness ?? { status: "NOT_READY" as const, score: 0, reasons: ["Waiting for refreshed actionable validation metrics."], completedRequiredForPilot: 30, completedRequiredForValidated: 100 };
-  if (!validation.configured) return <div className="validation-body"><div className="validation-warning">Supabase is not configured. Run the V5.2.1 schema migration and add the two Supabase environment variables so signals can be frozen and scored over time.</div>{validation.notes.map((n) => <p className="validation-note" key={n}>• {n}</p>)}</div>;
+  if (!validation.configured) return <div className="validation-body"><div className="validation-warning">Supabase is not configured. Run the V5.5 schema migration and add the two Supabase environment variables so signals can be frozen and scored over time.</div>{validation.notes.map((n) => <p className="validation-note" key={n}>• {n}</p>)}</div>;
   return <div className="validation-body">
     <div className="validation-stats">
       <div><span>Trust score</span><strong className={trustClass(validation.trustBand)}>{validation.trustScore}/100</strong><small>{validation.trustBand}</small></div>

@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       scan.governance = refreshDiscoveryGovernance(scan.governance, scan.analyses, scan.quant, scan.validation);
       persisted = (await persistScan(scan)).persisted;
     } catch (error) {
-      scan.warnings.push(error instanceof Error ? error.message : "Could not update the V5.2.1 persistence/validation state.");
+      scan.warnings.push(error instanceof Error ? error.message : "Could not update the V5.5 persistence/validation state.");
       scan.validation = await loadValidationSummary().catch(() => undefined);
     }
     return NextResponse.json({ ...scan, persisted });

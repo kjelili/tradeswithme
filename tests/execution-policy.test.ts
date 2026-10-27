@@ -38,7 +38,7 @@ test("halts, kill switch, unknown positions and loss breaker block entries", () 
 
 const order = (o: Partial<OvernightPaperOrder>): OvernightPaperOrder => ({
   symbol: "BTC-USD", assetClass: "CRYPTO", source: "KRAKEN_CRYPTO_DAILY", score: 0.6, evidenceScore: 70, confidence: 70,
-  entryUsd: 100, units: 0.2, notionalUsd: 20, notionalGbp: 16, stopUsd: 95, targetUsd: 110, rationale: "", ...o,
+  entryUsd: 100, units: 0.2, notionalUsd: 20, notionalGbp: 16, stopUsd: 94, targetUsd: 112, rationale: "", ...o,
 });
 const planBase = { usdPerGbp: 1.25, hardCapGbp: 50, openExposureGbp: 0, openPositions: 0, openSymbols: new Set<string>(), brokersAvailable: new Set<"ALPACA" | "KRAKEN">(["ALPACA", "KRAKEN"]) };
 
@@ -113,7 +113,7 @@ test("LIVE is per asset class at broker costs", () => {
   assert.equal(resolveMode({ ...base, readiness: { EQUITY: N, CRYPTO: N } }).mode, "PAPER");
 });
 test("Kraken entries are maker limits below the plan entry; Alpaca slightly above", () => {
-  const r = planEntries({ ...planBase, orders: [order({ symbol: "ETH-USD", entryUsd: 2000, stopUsd: 1900, targetUsd: 2200 }), order({ symbol: "BAC", assetClass: "EQUITY", entryUsd: 9, stopUsd: 8.5, targetUsd: 10 })] });
+  const r = planEntries({ ...planBase, orders: [order({ symbol: "ETH-USD", entryUsd: 2000, stopUsd: 1850, targetUsd: 2300 }), order({ symbol: "BAC", assetClass: "EQUITY", entryUsd: 9, stopUsd: 8.5, targetUsd: 10 })] });
   assert.ok(r.intents[0].limitUsd < 2000);
   assert.ok(r.intents[1].limitUsd > 9);
   const tight = planEntries({ ...planBase, orders: [order({ symbol: "X-USD", entryUsd: 100, stopUsd: 99.9, targetUsd: 101 })] });
@@ -133,4 +133,29 @@ test("broker-cost readiness: a crypto record that is VALIDATED at ledger cost fa
   const eq = executionReadinessFor(eqTrades, "EQUITY");
   assert.equal(eq.costBps, 10);
   assert.ok(eq.expectancyPct > crypto.expectancyPct);
+});
+test("edge gate and chase filter", async () => {
+  const { tradeEdge, chased } = await import("../lib/engine/edge");
+  // 3% stop on crypto: 1.25% cost is 42% of risk → blocked.
+  assert.equal(tradeEdge({ entry: 100, stop: 97, target: 106, assetClass: "CRYPTO" }).pass, false);
+  // 6% stop: 21% → allowed without evidence; breakeven = (6+1.25)/(12+6)
+  const ok = tradeEdge({ entry: 100, stop: 94, target: 112, assetClass: "CRYPTO" });
+  assert.equal(ok.pass, true);
+  assert.ok(Math.abs(ok.breakevenWinRate - 7.25 / 18) < 1e-4);
+  // Evidence: 40 trades at 30% wins → lower bound below breakeven → blocked.
+  assert.equal(tradeEdge({ entry: 100, stop: 94, target: 112, assetClass: "CRYPTO", stats: { wins: 12, n: 40 } }).pass, false);
+  // 60% wins over 80 trades → passes.
+  assert.equal(tradeEdge({ entry: 100, stop: 94, target: 112, assetClass: "CRYPTO", stats: { wins: 48, n: 80 } }).pass, true);
+  // Under 30 samples the posterior is reported but does not block.
+  assert.equal(tradeEdge({ entry: 100, stop: 94, target: 112, assetClass: "CRYPTO", stats: { wins: 2, n: 20 } }).pass, true);
+  assert.equal(chased("CRYPTO", 25), true);
+  assert.equal(chased("CRYPTO", 19.9), false);
+  assert.equal(chased("EQUITY", 10), true);
+  assert.equal(chased("EQUITY", null), false);
+  const r = planEntries({ ...planBase, runUpPct: { "HOT-USD": 30 }, orders: [order({ symbol: "HOT-USD" }), order({ symbol: "TIGHT-USD", stopUsd: 98 })] });
+  assert.equal(r.intents.length, 0);
+  assert.match(r.skipped[0].reason, /Chase filter/);
+  assert.match(r.skipped[1].reason, /Edge gate/);
+  const off = planEntries({ ...planBase, filters: { edgeGate: false, chaseFilter: false }, runUpPct: { "HOT-USD": 30 }, orders: [order({ symbol: "HOT-USD" }), order({ symbol: "TIGHT-USD", stopUsd: 98 })] });
+  assert.equal(off.intents.length, 2);
 });

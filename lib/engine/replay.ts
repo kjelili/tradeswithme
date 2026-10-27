@@ -7,8 +7,9 @@ import { decideSymbol, passesOvernightGate } from "./decision";
 import { eventRiskFor } from "./events";
 import { snapshot } from "./indicators";
 import { detectRegime } from "./strategies";
+import { chased, tradeEdge } from "./edge";
 import type { AssetClass, DataQuality, MarketSource, PriceBar, RiskSettings } from "./types";
-import { REALISTIC_COSTS, type ReplayCosts, type ReplaySymbolResult } from "./replay-stats";
+import { REALISTIC_COSTS, TAKER_ROUND_TRIP_BPS, type ReplayCosts, type ReplaySymbolResult } from "./replay-stats";
 
 export * from "./replay-stats";
 
@@ -33,11 +34,13 @@ function syntheticQuality(bars: PriceBar[], assetClass: AssetClass): DataQuality
  *   are only checked at each daily open (the bot runs once a day).
  * Gaps through a stop fill at the open (worse than the stop). Same-bar stop/target → stop.
  */
-export function simulateExecutable(bars: PriceBar[], signalIndex: number, plan: { entry: number; stop: number; target: number }, assetClass: AssetClass, horizonBars: number) {
+export function simulateExecutable(bars: PriceBar[], signalIndex: number, plan: { entry: number; stop: number; target: number }, assetClass: AssetClass, horizonBars: number, fill: "executor" | "market" = "executor") {
   const entryBar = bars[signalIndex + 1];
   if (!entryBar) return null;
   let entry: number;
-  if (assetClass === "EQUITY") {
+  if (fill === "market") {
+    entry = entryBar.open; // counterfactual: what a taker (market) entry would have done
+  } else if (assetClass === "EQUITY") {
     const limit = plan.entry * 1.003;
     if (entryBar.low > limit) return null; // limit never filled; executor cancels next cycle
     entry = Math.min(entryBar.open, limit);
@@ -97,7 +100,7 @@ export function replaySymbol(input: {
   const windowMs = (input.windowCalendarDays ?? ENGINE.historyCalendarDays) * 86_400_000;
   const horizon = ENGINE.forwardSignalHorizonBars;
   const costBps = assetClass === "CRYPTO" ? costs.cryptoRoundTripBps : costs.equityRoundTripBps;
-  const base: ReplaySymbolResult = { symbol, assetClass, source, bars: bars.length, firstDecision: null, lastDecision: null, decisionsEvaluated: 0, signals: 0, trades: [], ledgerTrades: [], buyHoldPct: 0, maxDecisionScore: -1, buySetupFilteredOut: 0 };
+  const base: ReplaySymbolResult = { symbol, assetClass, source, bars: bars.length, firstDecision: null, lastDecision: null, decisionsEvaluated: 0, signals: 0, trades: [], ledgerTrades: [], buyHoldPct: 0, maxDecisionScore: -1, buySetupFilteredOut: 0, makerAttempts: 0, missed: [] };
   if (source === "SIMULATED_FALLBACK") return { ...base, skipped: "Simulated data; replay refused." };
   if (bars.length < ENGINE.minimumBars + horizon + 2) return { ...base, skipped: `Only ${bars.length} bars.` };
 
@@ -150,9 +153,23 @@ export function replaySymbol(input: {
       base.ledgerTrades.push({ ...meta, ...ledger, grossPct: round(gross), netPct: round(gross - ENGINE.roundTripCostBps / 100) });
     }
     const exec = simulateExecutable(bars, i, plan, assetClass, horizon);
+    if (assetClass === "CRYPTO" && bars[i + 1]) base.makerAttempts += 1;
+    if (!exec && assetClass === "CRYPTO" && bars[i + 1]) {
+      // Maker limit never filled. Record what a market (taker) entry would have returned.
+      const cf = simulateExecutable(bars, i, plan, assetClass, horizon, "market");
+      if (cf) {
+        const gross = (cf.exit / cf.entry - 1) * 100;
+        base.missed.push({ symbol, signalDate: date, outcome: cf.outcome, grossPct: round(gross), netPctAtTaker: round(gross - TAKER_ROUND_TRIP_BPS / 100) });
+      }
+    }
     if (exec) {
       const gross = (exec.exit / exec.entry - 1) * 100;
-      base.trades.push({ ...meta, ...exec, entry: round(exec.entry, 8), exit: round(exec.exit, 8), grossPct: round(gross), netPct: round(gross - costBps / 100) });
+      const edge = tradeEdge({ entry: exec.entry, stop: plan.stop, target: plan.target, assetClass, costBps });
+      base.trades.push({
+        ...meta, ...exec, entry: round(exec.entry, 8), exit: round(exec.exit, 8), grossPct: round(gross), netPct: round(gross - costBps / 100),
+        costToRisk: edge.costToRisk, breakevenWinRate: edge.breakevenWinRate, edgePass: edge.pass,
+        runUp5Pct: indicators.return5Pct == null ? null : round(indicators.return5Pct, 2), chased: chased(assetClass, indicators.return5Pct),
+      });
       const exitIdx = bars.findIndex((b) => b.date === exec.exitDate);
       openUntilIndex = exitIdx > 0 ? exitIdx - 1 : i + horizon + 1; // re-entry possible from the exit day's close
     }

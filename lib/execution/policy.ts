@@ -2,6 +2,7 @@
 // lives here so it can be unit-tested without brokers, network or a database.
 
 import { KRAKEN_MAKER_ENTRY_DISCOUNT } from "@/lib/engine/config";
+import { chased, tradeEdge, type TradeEdge, type WinStats } from "@/lib/engine/edge";
 import type { AssetClass, LiveReadinessStatus, OvernightPaperOrder } from "@/lib/engine/types";
 
 export type ExecutionMode = "OFF" | "PAPER" | "LIVE";
@@ -106,6 +107,7 @@ export type EntryIntent = {
   targetUsd: number;
   notionalUsd: number;
   notionalGbp: number;
+  edge: TradeEdge;
 };
 
 export type SkippedEntry = { symbol: string; reason: string };
@@ -132,7 +134,14 @@ export function planEntries(input: {
   brokersAvailable: Set<Broker>;
   /** Set in LIVE mode: orders for other asset classes are refused. */
   liveAssetClasses?: Set<AssetClass>;
+  /** V5.5 filters (default on). */
+  filters?: { edgeGate: boolean; chaseFilter: boolean };
+  /** Settled win stats per asset class at broker cost (edge-gate posterior). */
+  winStats?: Partial<Record<AssetClass, WinStats>>;
+  /** Trailing 5-bar return per symbol (chase filter). */
+  runUpPct?: Record<string, number | null>;
 }): { intents: EntryIntent[]; skipped: SkippedEntry[] } {
+  const filters = input.filters ?? { edgeGate: true, chaseFilter: true };
   const intents: EntryIntent[] = [];
   const skipped: SkippedEntry[] = [];
   let remainingGbp = Math.max(0, input.hardCapGbp - input.openExposureGbp);
@@ -159,12 +168,18 @@ export function planEntries(input: {
     // plan entry (the executor lowers it further if the live price is already lower).
     const limitUsd = roundPrice(entry * (broker === "ALPACA" ? 1.003 : KRAKEN_MAKER_ENTRY_DISCOUNT), broker);
     if (!(limitUsd > stop)) { skip("Entry limit would sit at or below the stop."); continue; }
+    if (filters.chaseFilter && chased(order.assetClass, input.runUpPct?.[order.symbol])) {
+      skip(`Chase filter: already up ${input.runUpPct?.[order.symbol]?.toFixed(1)}% in 5 bars.`);
+      continue;
+    }
+    const edge = tradeEdge({ entry: limitUsd, stop, target, assetClass: order.assetClass, stats: input.winStats?.[order.assetClass] ?? null });
+    if (filters.edgeGate && !edge.pass) { skip(`Edge gate: ${edge.reasons[0]}`); continue; }
     const qty = broker === "ALPACA" ? Math.floor(budgetUsd / limitUsd) : Math.floor((budgetUsd / limitUsd) * 1e8) / 1e8;
     if (qty <= 0) { skip(`£${budgetGbp.toFixed(2)} cannot buy one unit at $${limitUsd}.`); continue; }
     const notionalUsd = qty * limitUsd;
     const notionalGbp = notionalUsd / input.usdPerGbp;
     if (notionalGbp > remainingGbp + 1e-9) { skip("Would exceed the hard cap."); continue; }
-    intents.push({ broker, symbol: order.symbol, qty, limitUsd, stopUsd: roundPrice(stop, broker), targetUsd: roundPrice(target, broker), notionalUsd, notionalGbp });
+    intents.push({ broker, symbol: order.symbol, qty, limitUsd, stopUsd: roundPrice(stop, broker), targetUsd: roundPrice(target, broker), notionalUsd, notionalGbp, edge });
     remainingGbp -= notionalGbp;
     slots -= 1;
   }

@@ -30,6 +30,8 @@ export type ExecOrder = {
   exit_reason: ExitReason | null;
   pnl_usd: number | null;
   detail: string | null;
+  /** V5.5 "why it traded" card, frozen at entry. */
+  rationale?: unknown;
 };
 
 function cfg() {

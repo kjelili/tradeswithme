@@ -4,7 +4,7 @@ import type { ScanResult, ValidationSummary } from "../lib/engine/types";
 
 // ---- In-memory fakes for Supabase, Alpaca and Kraken behind global fetch ----
 type Row = Record<string, any>;
-const db: { orders: Row[]; state: Row[] } = { orders: [], state: [] };
+const db: { orders: Row[]; state: Row[]; activity: Row[] } = { orders: [], state: [], activity: [] };
 const calls: string[] = [];
 let alpacaOrders: Row[] = [];
 let alpacaPositions: Row[] = [];
@@ -27,10 +27,11 @@ globalThis.fetch = (async (input: any, init: any = {}) => {
   calls.push(`${method} ${url.host}${url.pathname}`);
   if (url.host === "sb.test") {
     const table = url.pathname.split("/").pop()!;
-    const rows = table === "twm_exec_orders" ? db.orders : db.state;
+    const rows = table === "twm_exec_orders" ? db.orders : table === "twm_activity_log" ? db.activity : db.state;
     if (method === "GET") return json(filterRows(rows, url.searchParams));
     if (method === "POST") {
       const body = JSON.parse(init.body);
+      if (Array.isArray(body)) { for (const b of body) rows.push({ id: nextId++, ...b }); return new Response(null, { status: 201 }); }
       const key = table === "twm_exec_orders" ? "client_ref" : "id";
       const existing = rows.find((r) => r[key] === body[key]);
       if (existing) {
@@ -71,7 +72,7 @@ const scan = {
   overnightPlan: {
     fx: { pair: "GBP/USD", rate: 1.25, asOf: "2026-10-23", source: "FRANKFURTER_DAILY" },
     orders: [
-      { symbol: "BTC-USD", assetClass: "CRYPTO", source: "KRAKEN_CRYPTO_DAILY", score: .6, evidenceScore: 70, confidence: 70, entryUsd: 100000, units: 0.0002, notionalUsd: 20, notionalGbp: 16, stopUsd: 95000.37, targetUsd: 110000, rationale: "" },
+      { symbol: "BTC-USD", assetClass: "CRYPTO", source: "KRAKEN_CRYPTO_DAILY", score: .6, evidenceScore: 70, confidence: 70, entryUsd: 100000, units: 0.0002, notionalUsd: 20, notionalGbp: 16, stopUsd: 94000.37, targetUsd: 110000, rationale: "" },
       { symbol: "BAC", assetClass: "EQUITY", source: "YAHOO_DAILY", score: .6, evidenceScore: 70, confidence: 70, entryUsd: 9.5, units: 2, notionalUsd: 19, notionalGbp: 15.2, stopUsd: 9, targetUsd: 10.5, rationale: "" },
     ],
   },
@@ -87,7 +88,7 @@ test("LIVE request without VALIDATED evidence trades paper only, and is idempote
   assert.equal(r1.submitted.length, 2);
   assert.ok(!calls.some((c) => c.includes("api.alpaca.markets/v2/orders") && !c.includes("paper")), "must never touch live Alpaca");
   // limit = min(plan 100000×0.998, last 99500×0.998) = 99301 floored to 1dp
-  assert.ok(calls.some((c) => c === "KRAKEN validate=true limit@99301 post=post exp=+72000 close=stop-loss@95000.4 vol=0.00020040"), calls.filter((c) => c.startsWith("KRAKEN")).join("\n"));
+  assert.ok(calls.some((c) => c === "KRAKEN validate=true limit@99301 post=post exp=+72000 close=stop-loss@94000.4 vol=0.00020040"), calls.filter((c) => c.startsWith("KRAKEN")).join("\n"));
   const bracket = alpacaOrders[0];
   assert.equal(bracket.order_class, "bracket");
   assert.equal(bracket.stop_loss.stop_price, "9");
@@ -124,11 +125,23 @@ test("owner halt blocks new entries; unknown broker positions block entries", as
   assert.ok(r2.decision.reasons.some((x) => x.includes("not in the bot ledger")));
 });
 
-test("OFF does nothing at all", async () => {
+test("OFF sends nothing to any broker but still publishes the funnel and activity log", async () => {
   process.env.EXECUTION_MODE = "off";
   const before = calls.length;
   const { runExecutionCycle } = await import("../lib/execution/engine");
   const r = await runExecutionCycle(scan, notReady);
   assert.equal(r.decision.mode, "OFF");
-  assert.equal(calls.length, before);
+  const newCalls = calls.slice(before);
+  assert.ok(newCalls.every((c) => c.includes("sb.test")), newCalls.join("\n"));
+  assert.ok(r.funnel && r.funnel.stages.at(-1)!.count === null);
+  assert.ok(db.activity.some((l) => l.agent === "EXECUTOR" && /Execution is off/.test(l.message)));
+});
+
+test("orders carry a why-it-traded rationale and runs write an activity log", () => {
+  const row = db.orders.find((o) => o.symbol === "BAC")!;
+  assert.ok(row.rationale, "rationale stored");
+  assert.ok(row.rationale.summary.length > 20);
+  assert.ok(row.rationale.edge.breakevenWinRatePct > 0);
+  assert.ok(db.activity.some((l) => l.agent === "EXECUTOR" && /Placed/.test(l.message)));
+  assert.ok(db.state.find((x) => x.id === "owner")!.last_run.funnel.stages.length === 6);
 });

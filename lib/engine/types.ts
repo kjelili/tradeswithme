@@ -730,6 +730,10 @@ export type ExecutionReadiness = LiveReadiness & {
   profitFactor: number;
   maxDrawdownPct: number;
   trustScore: number;
+  /** Settled calls with a positive return at broker cost (feeds the edge gate's win-rate posterior). */
+  wins: number;
+  /** Most recent broker-cost returns, oldest first (feeds the chance-of-profit simulation). */
+  returnsSample: number[];
 };
 
 

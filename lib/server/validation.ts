@@ -459,6 +459,8 @@ export function executionReadinessFor(completed: ForwardSignal[], assetClass: As
     profitFactor: round(stats.pf),
     maxDrawdownPct: round(stats.dd),
     trustScore: stats.trust,
+    wins: returns.filter((x) => x > 0).length,
+    returnsSample: returns.slice(-300).map((x) => round(x, 4)),
   };
 }
 

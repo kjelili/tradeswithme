@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
         : `Daily autonomous settle → train → scan cycle completed. ${settlementWaiting} observations still need additional verified bars.`,
     });
 
-    console.log("TradesWithMe V5.2.1 autonomous discovery/governance cycle", JSON.stringify({
+    console.log("TradesWithMe V5.5 autonomous discovery/governance cycle", JSON.stringify({
       at: scan.at,
       ownerState: Boolean(owner.state),
       positions: positions.length,
@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Scheduled autonomous learning cycle failed.";
     const detail = `[${phase}] ${message}`;
-    console.error("TradesWithMe V5.2.1 autonomous discovery/governance cycle failed", detail);
+    console.error("TradesWithMe V5.5 autonomous discovery/governance cycle failed", detail);
     await persistAutomationRun({
       status: "FAILED",
       actionableSettled,

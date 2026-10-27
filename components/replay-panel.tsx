@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DEFAULT_WATCHLIST } from "@/lib/engine/config";
-import { simulatePortfolio, statsFor, verdictFor, REALISTIC_COSTS, LEDGER_COSTS, type ReplaySymbolResult, type ReplayTrade, type ReplayStats } from "@/lib/engine/replay-stats";
+import { applyFilters, chanceOfProfit, fillQuality, simulatePortfolio, statsFor, verdictFor, REALISTIC_COSTS, LEDGER_COSTS, type ReplayFilters, type ReplaySymbolResult, type ReplayTrade, type ReplayStats } from "@/lib/engine/replay-stats";
+import FanChart from "@/components/fan-chart";
 
 const ACCESS_KEY = "twm-v3-access";
 const RESULTS_KEY = "twm-replay-results";
@@ -69,6 +70,7 @@ export default function ReplayPanel() {
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
   const [errors, setErrors] = useState<string[]>([]);
   const [costMode, setCostMode] = useState<CostMode>("realistic");
+  const [filters, setFilters] = useState<ReplayFilters>({ edgeGate: true, chaseFilter: true });
 
   async function run() {
     let code = "";
@@ -100,13 +102,24 @@ export default function ReplayPanel() {
   }
 
   const view = useMemo(() => {
-    const all = withCosts(results.flatMap((r) => r.trades), costMode);
+    const raw = withCosts(results.flatMap((r) => r.trades), costMode);
+    // What the bot would actually trade = executable trades that pass the V5.5 filters.
+    const all = applyFilters(raw, filters);
     const eq = all.filter((t) => t.assetClass === "EQUITY");
     const cr = all.filter((t) => t.assetClass === "CRYPTO");
     const ledger = results.flatMap((r) => r.ledgerTrades);
     const s = statsFor(all);
-    return { all: s, eq: statsFor(eq), cr: statsFor(cr), ledger: statsFor(ledger), verdict: verdictFor(s), portfolio: simulatePortfolio(all), withNet: all };
-  }, [results, costMode]);
+    const blockedEdge = raw.filter((t) => t.edgePass === false).length;
+    const blockedChase = raw.filter((t) => t.chased).length;
+    return {
+      all: s, unfiltered: statsFor(raw), eq: statsFor(eq), cr: statsFor(cr), ledger: statsFor(ledger),
+      blockedByFilters: statsFor(raw.filter((t) => !all.includes(t))),
+      blockedEdge, blockedChase,
+      verdict: verdictFor(s), portfolio: simulatePortfolio(all), withNet: all,
+      fills: fillQuality(results),
+      fan: chanceOfProfit(all.map((t) => t.netPct)),
+    };
+  }, [results, costMode, filters]);
 
   function download() {
     const blob = new Blob([JSON.stringify({ generatedAt: new Date().toISOString(), costMode, results }, null, 2)], { type: "application/json" });
@@ -128,6 +141,8 @@ export default function ReplayPanel() {
         </div>
         <div className="exec-actions">
           <button onClick={() => setCostMode(costMode === "realistic" ? "ledger" : "realistic")} disabled={running}>Costs: {costMode === "realistic" ? "realistic" : "ledger (0.16%)"}</button>
+          <button onClick={() => setFilters({ ...filters, edgeGate: !filters.edgeGate })} disabled={running} aria-pressed={filters.edgeGate}>Edge gate: {filters.edgeGate ? "on" : "off"}</button>
+          <button onClick={() => setFilters({ ...filters, chaseFilter: !filters.chaseFilter })} disabled={running} aria-pressed={filters.chaseFilter}>Chase filter: {filters.chaseFilter ? "on" : "off"}</button>
           {results.length > 0 && <button onClick={download} disabled={running}>Download JSON</button>}
           <button className="exec-warn" onClick={() => void run()} disabled={running}>{running ? `Replaying ${progress.done}/${progress.total}…` : "Run replay (all symbols)"}</button>
         </div>
@@ -143,12 +158,15 @@ export default function ReplayPanel() {
           <li><b>{span}</b> · {results.reduce((s, r) => s + r.decisionsEvaluated, 0).toLocaleString()} symbol-days evaluated · {results.reduce((s, r) => s + r.signals, 0)} entry signals</li>
           {view.verdict.reasons.map((r) => <li key={r}>{r}</li>)}
           <li>Portfolio (max 3 positions): {view.portfolio.taken} trades taken · return {view.portfolio.finalReturnPct}% · max drawdown {view.portfolio.maxDrawdownPct}%</li>
+          <li>Filters removed {view.blockedByFilters.trades} trade(s) (edge gate {view.blockedEdge}, chase {view.blockedChase}); the removed trades averaged <b className={view.blockedByFilters.avgNetPct > 0 ? "exec-pos" : "exec-neg"}>{view.blockedByFilters.trades ? `${view.blockedByFilters.avgNetPct.toFixed(2)}%` : "—"}</b>. Negative means the filters saved money. Approximate: a refused trade would also have freed the symbol for a re-entry.</li>
+          {view.fills.attempts > 0 && <li>Kraken maker entries: {view.fills.fillRatePct}% filled ({view.fills.missed} of {view.fills.attempts} missed). Missed trades as market buys would have averaged <b className={view.fills.avgMissedNetAtTakerPct > 0 ? "exec-pos" : "exec-neg"}>{view.fills.avgMissedNetAtTakerPct.toFixed(2)}%</b> after 1.65% taker costs ({view.fills.missedWinners} winners missed).</li>}
         </ul>
         <div className="exec-table-wrap">
           <table className="exec-table">
             <thead><tr><th>Set</th><th>Trades</th><th>Win</th><th>Avg net</th><th>PF</th><th>Max DD</th><th>Target/Stop/Time</th></tr></thead>
             <tbody>
-              <StatRow label="All (executable)" s={view.all} />
+              <StatRow label="Bot trades (filters applied)" s={view.all} />
+              <StatRow label="Without V5.5 filters" s={view.unfiltered} />
               <StatRow label="Equities" s={view.eq} />
               <StatRow label="Crypto" s={view.cr} />
               <StatRow label="Ledger rule (close entry, 0.16%)" s={view.ledger} />
@@ -156,6 +174,7 @@ export default function ReplayPanel() {
           </table>
         </div>
         <EquityCurve curve={view.portfolio.curve} />
+        {view.fan ? <FanChart fan={view.fan} title="Chance of profit — next 100 bot trades (bootstrapped from these replay trades)" /> : <p className="exec-note">Chance-of-profit needs at least 10 replay trades.</p>}
         <div className="exec-table-wrap">
           <table className="exec-table">
             <thead><tr><th>Symbol</th><th>Days</th><th>Signals</th><th>Trades</th><th>Win</th><th>Avg net</th><th>PF</th><th>Buy &amp; hold</th><th>Max score</th></tr></thead>

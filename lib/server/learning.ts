@@ -75,7 +75,7 @@ export function baselineLearningPolicy(note = "Learning ledgers have not accumul
     baselineExpectancyPct: null,
     segmentDrift: { EQUITY: emptyDrift(), CRYPTO: emptyDrift() },
     segments: { GLOBAL: baselineSegment("GLOBAL"), EQUITY: baselineSegment("EQUITY"), CRYPTO: baselineSegment("CRYPTO") },
-    notes: [note, "V5.2.1 never changes the £50 hard cap, portfolio limits, stop logic, data gates or event-risk gates."],
+    notes: [note, "V5.5 never changes the £50 hard cap, portfolio limits, stop logic, data gates or event-risk gates."],
   };
 }
 
@@ -243,7 +243,7 @@ async function persistPolicy(policy: LearningPolicy) {
 
 export async function loadLearningPolicy(): Promise<LearningPolicy> {
   if (!supabaseConfig()) return baselineLearningPolicy("Supabase is not configured, so the adaptive learner is running its baseline policy only.");
-  return (await loadStoredPolicy()) ?? baselineLearningPolicy("No trained policy exists yet. V5.2.1 is using baseline strategy weights.");
+  return (await loadStoredPolicy()) ?? baselineLearningPolicy("No trained policy exists yet. V5.5 is using baseline strategy weights.");
 }
 
 export async function trainLearningPolicy(): Promise<{ policy: LearningPolicy; persisted: boolean }> {

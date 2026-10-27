@@ -60,3 +60,21 @@ Kraken has no spot sandbox: in PAPER mode Kraken orders are sent with `validate=
 Fee tiers change. If your Kraken 30-day volume moves you to a cheaper tier, update `BROKER_ROUND_TRIP_BPS` in `lib/engine/config.ts`.
 
 - Kraken partial fills: a post-only limit can fill partly before it expires. The bot opens the filled volume. Confirm on the first live partial fill that Kraken attaches the conditional stop to that volume.
+
+## V5.5 — edge gate, chase filter, funnel, agents, chance of profit
+
+Adopted from reviewing two trading-bot demos (a Polymarket HFT desk and a Solana copy-trading bot). Their strategies were **not** adopted (Polymarket is close-only for UK residents and needs always-on low-latency infrastructure; memecoin copy-trading is rug-pull-prone and untestable). Their *transparency* ideas were.
+
+| Feature | Where | What it does |
+|---|---|---|
+| Edge-after-costs gate | `lib/engine/edge.ts`, executor | Refuses a trade when round-trip cost exceeds 25% of the stop distance, or (once 30+ settled calls exist) when the win-rate lower bound is below the trade's break-even win rate after costs. `EDGE_GATE=off` disables. |
+| Chase filter | same | Refuses entries already up ≥20% (crypto) / ≥10% (equities) over the last 5 bars. `CHASE_FILTER=off` disables. |
+| Maker-fill tracking | replay | Fill rate of Kraken post-only entries and what the missed trades would have returned as market buys (at 1.65% taker cost). |
+| Decision funnel + skip reasons | `lib/engine/funnel.ts`, desk | Scanned → verified → strong signal → all gates → overnight plan → orders, with the top reasons signals died. Saved every nightly run, even with execution off. |
+| Agent activity log | `twm_activity_log`, desk | Scout / Filter / Analyst / Risk / Executor narration of each run. |
+| Why it traded | `twm_exec_orders.rationale`, desk | Click any order: agents for/against, score/evidence, risk vs reward, break-even win rate after costs, 5-bar run-up. |
+| Chance of profit | `chanceOfProfit()`, desk + replay | Bootstrapped fan of the next 100 trades from replay trades or the forward ledger at broker cost. Not a forecast. |
+
+The replay's filter toggles show whether the edge gate and chase filter actually removed losing trades. Keep a filter on only if the removed trades averaged below zero.
+
+Migration: re-run `supabase/schema.sql` (adds `rationale` and `twm_activity_log`).
