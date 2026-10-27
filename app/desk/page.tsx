@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Dashboard from "@/components/dashboard";
 import ExecutionPanel from "@/components/execution-panel";
+import ReplayPanel from "@/components/replay-panel";
 
 export const metadata: Metadata = {
   title: "Owner desk",
@@ -11,7 +12,7 @@ export default function DeskPage() {
   return (
     <>
       <Dashboard />
-      <div className="shell"><ExecutionPanel /></div>
+      <div className="shell"><ExecutionPanel /><ReplayPanel /></div>
     </>
   );
 }

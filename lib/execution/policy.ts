@@ -1,7 +1,8 @@
 // Pure, side-effect-free execution policy. Every decision that can move real money
 // lives here so it can be unit-tested without brokers, network or a database.
 
-import type { LiveReadiness, OvernightPaperOrder } from "@/lib/engine/types";
+import { KRAKEN_MAKER_ENTRY_DISCOUNT } from "@/lib/engine/config";
+import type { AssetClass, LiveReadinessStatus, OvernightPaperOrder } from "@/lib/engine/types";
 
 export type ExecutionMode = "OFF" | "PAPER" | "LIVE";
 export type Broker = "ALPACA" | "KRAKEN";
@@ -44,6 +45,8 @@ export function readExecutionEnv(env: Record<string, string | undefined> = proce
 export type ModeDecision = {
   mode: ExecutionMode;
   newEntriesAllowed: boolean;
+  /** In LIVE mode, only these asset classes may open real-money positions. */
+  liveAssetClasses: AssetClass[];
   reasons: string[];
 };
 
@@ -53,7 +56,8 @@ export type ModeDecision = {
  */
 export function resolveMode(input: {
   env: ExecutionEnv;
-  readiness: LiveReadiness | undefined;
+  /** Per-asset-class readiness at realistic broker costs (ValidationSummary.executionReadiness). */
+  readiness: Partial<Record<AssetClass, { status: LiveReadinessStatus }>> | undefined;
   dbHalted: boolean;
   fxVerified: boolean;
   realizedLossGbp: number;
@@ -61,13 +65,19 @@ export function resolveMode(input: {
 }): ModeDecision {
   const { env } = input;
   const reasons: string[] = [];
-  if (env.requestedMode === "OFF") return { mode: "OFF", newEntriesAllowed: false, reasons: ["EXECUTION_MODE is off."] };
+  if (env.requestedMode === "OFF") return { mode: "OFF", newEntriesAllowed: false, liveAssetClasses: [], reasons: ["EXECUTION_MODE is off."] };
+  const classes: AssetClass[] = ["EQUITY", "CRYPTO"];
+  const liveAssetClasses = classes.filter((c) => input.readiness?.[c]?.status === "VALIDATED");
 
   let mode: ExecutionMode = env.requestedMode;
   const downgrade = (reason: string) => { if (mode === "LIVE") mode = "PAPER"; reasons.push(reason); };
 
   if (mode === "LIVE") {
-    if (input.readiness?.status !== "VALIDATED") downgrade(`Forward evidence is ${input.readiness?.status ?? "UNKNOWN"}, not VALIDATED — trading on paper.`);
+    if (!liveAssetClasses.length) {
+      downgrade(`No asset class is VALIDATED at realistic broker costs (equities ${input.readiness?.EQUITY?.status ?? "UNKNOWN"}, crypto ${input.readiness?.CRYPTO?.status ?? "UNKNOWN"}) — trading on paper.`);
+    } else {
+      for (const c of classes) if (!liveAssetClasses.includes(c)) reasons.push(`${c === "CRYPTO" ? "Crypto" : "Equities"} not VALIDATED at broker costs — no real-money ${c.toLowerCase()} entries.`);
+    }
     if (!env.appAccessCodeSet) downgrade("APP_ACCESS_CODE is not set.");
     if (!env.cronSecretSet) downgrade("CRON_SECRET is not set.");
     if (!input.fxVerified) downgrade("GBP/USD rate is a fallback; the £ cap cannot be enforced precisely.");
@@ -84,7 +94,7 @@ export function resolveMode(input: {
     reasons.push(`Loss breaker tripped: £${input.realizedLossGbp.toFixed(2)} realised loss in 30 days ≥ £${breakerGbp.toFixed(2)}.`);
   }
   if (!reasons.length) reasons.push(mode === "LIVE" ? "All live gates passed." : "Paper mode requested.");
-  return { mode, newEntriesAllowed, reasons };
+  return { mode, newEntriesAllowed, liveAssetClasses: mode === "LIVE" ? liveAssetClasses : [], reasons };
 }
 
 export type EntryIntent = {
@@ -120,6 +130,8 @@ export function planEntries(input: {
   openPositions: number;
   openSymbols: Set<string>;
   brokersAvailable: Set<Broker>;
+  /** Set in LIVE mode: orders for other asset classes are refused. */
+  liveAssetClasses?: Set<AssetClass>;
 }): { intents: EntryIntent[]; skipped: SkippedEntry[] } {
   const intents: EntryIntent[] = [];
   const skipped: SkippedEntry[] = [];
@@ -133,6 +145,7 @@ export function planEntries(input: {
     if (input.openSymbols.has(order.symbol)) { skip("Already holding this symbol."); continue; }
     if (!input.brokersAvailable.has(broker)) { skip(`${broker} credentials for this mode are not configured.`); continue; }
     if (order.source === "SIMULATED_FALLBACK") { skip("Simulated data can never trade."); continue; }
+    if (input.liveAssetClasses && !input.liveAssetClasses.has(order.assetClass)) { skip(`${order.assetClass} is not VALIDATED at realistic broker costs.`); continue; }
     const entry = order.entryUsd;
     const stop = order.stopUsd;
     const target = order.targetUsd;
@@ -142,8 +155,10 @@ export function planEntries(input: {
     }
     const budgetGbp = Math.min(order.notionalGbp, remainingGbp);
     const budgetUsd = budgetGbp * input.usdPerGbp;
-    // Equities via bracket orders need whole shares; crypto supports fractional volume.
-    const limitUsd = roundPrice(entry * 1.003, broker);
+    // Equities: marketable bracket limit (+0.3%). Crypto: post-only maker limit below the
+    // plan entry (the executor lowers it further if the live price is already lower).
+    const limitUsd = roundPrice(entry * (broker === "ALPACA" ? 1.003 : KRAKEN_MAKER_ENTRY_DISCOUNT), broker);
+    if (!(limitUsd > stop)) { skip("Entry limit would sit at or below the stop."); continue; }
     const qty = broker === "ALPACA" ? Math.floor(budgetUsd / limitUsd) : Math.floor((budgetUsd / limitUsd) * 1e8) / 1e8;
     if (qty <= 0) { skip(`£${budgetGbp.toFixed(2)} cannot buy one unit at $${limitUsd}.`); continue; }
     const notionalUsd = qty * limitUsd;

@@ -13,3 +13,4 @@ desktop.ini
 
 # TypeScript build cache
 *.tsbuildinfo
+replay-report.json

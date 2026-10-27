@@ -1,18 +1,18 @@
 import { CRYPTO_BENCHMARK, DEFAULT_RISK_SETTINGS, DEFAULT_WATCHLIST, ENGINE, EQUITY_BENCHMARK } from "./config";
-import { runStrategyLab, strategyHealthFromLab, strategyStatesFromLab } from "./backtest";
+import { decideSymbol, historyPassesDataGate } from "./decision";
 import { correlationStatus, returnCorrelation } from "./correlation";
 import { eventRiskFor, loadEarningsCalendar } from "./events";
 import { assetClassForSymbol, getHistory } from "./market-data";
 import { snapshot } from "./indicators";
 import { buildOvernightPlan } from "./overnight";
 import { assessDataQuality, expectedCompletedEquitySession } from "./quality";
-import { actionFor, buildTradePlan, portfolioExposure } from "./risk";
-import { detectRegime, rawVotes, scoreWithCritic } from "./strategies";
+import { portfolioExposure } from "./risk";
+import { detectRegime } from "./strategies";
 import { detectQuantRegime } from "./quant-regime";
 import { buildQuantIntelligence, executionQualityProxy } from "./quant-intelligence";
 import { buildDiscoveryGovernance } from "./governance-intelligence";
 import { enrichSignalIntelligence } from "./signal-intelligence";
-import type { AgentVote, AssetClass, EvidenceProfile, LearningAgentId, LearningPolicy, MarketDataHealth, MarketDataHealthItem, PositionInput, RiskSettings, ScanRequest, ScanResult, SymbolAnalysis } from "./types";
+import type { AgentVote, EvidenceProfile, LearningPolicy, MarketDataHealth, MarketDataHealthItem, PositionInput, RiskSettings, ScanRequest, ScanResult, SymbolAnalysis } from "./types";
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
@@ -38,16 +38,7 @@ async function mapWithConcurrency<T, U>(items: T[], limit: number, fn: (item: T)
 }
 
 
-function adaptiveWeights(policy: LearningPolicy | undefined, assetClass: AssetClass) {
-  if (!policy || (policy.mode !== "ADAPTIVE" && policy.mode !== "GUARDED")) return undefined;
-  const specific = policy.segments[assetClass];
-  const segment = specific && specific.sampleCount >= 10 ? specific : policy.segments.GLOBAL;
-  return Object.fromEntries(segment.agents.map((agent) => [agent.id, agent.learnedWeight])) as Partial<Record<LearningAgentId, number>>;
-}
 
-function decisionWeightsActive(policy: LearningPolicy | undefined) {
-  return Boolean(policy?.decisionWeightsActive && policy.mode === "ADAPTIVE");
-}
 
 export function normalizeSettings(input?: Partial<RiskSettings>): RiskSettings {
   return {
@@ -82,19 +73,7 @@ function bandForEvidence(score: number): EvidenceProfile["band"] {
   return "WEAK";
 }
 
-function diversificationScore(status: ReturnType<typeof correlationStatus>) {
-  if (status === "LOW") return 90;
-  if (status === "MODERATE") return 66;
-  if (status === "HIGH") return 38;
-  return 72;
-}
 
-function historyPassesDataGate(source: import("./types").MarketSource, quality: ReturnType<typeof assessDataQuality>, assetClass: "EQUITY" | "CRYPTO") {
-  const freshnessPass = assetClass === "EQUITY"
-    ? quality.freshnessSessions === 0
-    : quality.freshnessDays <= 2;
-  return source !== "SIMULATED_FALLBACK" && quality.score >= 60 && freshnessPass && quality.bars >= ENGINE.minimumBars;
-}
 
 function sourceLabel(source: string) {
   if (source === "YAHOO_CHART_DAILY") return "Yahoo chart daily";
@@ -180,15 +159,6 @@ export async function runPersonalScan(input: ScanRequest = {}, learning?: Learni
     const regime = assetClass === "CRYPTO" ? cryptoRegime : equityRegime;
     const indicators = snapshot(history.bars);
     const quantRegime = detectQuantRegime(history.bars, assetClass);
-    const lab = runStrategyLab(symbol, history.source, history.bars, regime);
-    const health = strategyHealthFromLab(lab);
-    const strategyStates = strategyStatesFromLab(lab);
-    const baseVotes = rawVotes(history.bars, regime);
-    const learnedWeights = adaptiveWeights(learning, assetClass);
-    const researchScored = scoreWithCritic(baseVotes, history.bars, regime, health, learnedWeights);
-    const baselineScored = learnedWeights ? scoreWithCritic(baseVotes, history.bars, regime, health) : researchScored;
-    const useLearnedForDecisions = decisionWeightsActive(learning);
-    const decisionScored = useLearnedForDecisions ? researchScored : baselineScored;
     const quality = assessDataQuality(history.source, history.bars, assetClass, assetClass === "EQUITY" ? expectedEquitySession : null);
     const eventRisk = eventRiskFor(symbol, assetClass, indicators, earnings);
 
@@ -215,21 +185,14 @@ export async function runPersonalScan(input: ScanRequest = {}, learning?: Learni
       }
     }
     const corrStatus = correlationStatus(maxCorrelation);
-    const divScore = diversificationScore(corrStatus);
-    const eventPenalty = eventRisk.level === "BLOCK" ? 42 : eventRisk.level === "CAUTION" ? 16 : eventRisk.level === "UNVERIFIED" ? 7 : 0;
-    const strategyStability = lab.validationWinner?.stabilityScore ?? 0;
-    const scoreComponent = clamp(50 + researchScored.score * 50, 0, 100);
-    const evidenceScore = Math.round(clamp(
-      scoreComponent * 0.24 + researchScored.confidence * 0.16 + strategyStability * 0.27 + quality.score * 0.23 + divScore * 0.10 - eventPenalty,
-      0,
-      100,
-    ));
-    const decisionScoreComponent = clamp(50 + decisionScored.score * 50, 0, 100);
-    const decisionEvidenceScore = Math.round(clamp(
-      decisionScoreComponent * 0.24 + decisionScored.confidence * 0.16 + strategyStability * 0.27 + quality.score * 0.23 + divScore * 0.10 - eventPenalty,
-      0,
-      100,
-    ));
+    const held = positions.some((p) => p.symbol === symbol && p.qty > 0);
+    // V5.4: the decision core is shared with the historical trade replay (lib/engine/decision.ts).
+    const decided = decideSymbol({
+      symbol, assetClass, source: history.source, bars: history.bars, indicators, regime,
+      benchmarkVerified: assetClass === "EQUITY" ? equityBenchmarkVerified : cryptoBenchmarkVerified,
+      quality, eventRisk, corrStatus, heldSymbolCount: heldSymbols.length, held, settings, exposure, learning,
+    });
+    const { lab, health, strategyStates, researchScored, decisionScored, useLearnedForDecisions, divScore, eventPenalty, strategyStability, evidenceScore, decisionEvidenceScore, researchConfidence, decisionConfidence, action, gateReasons, plan } = decided;
     const evidence: EvidenceProfile = {
       score: evidenceScore,
       band: bandForEvidence(evidenceScore),
@@ -239,37 +202,6 @@ export async function runPersonalScan(input: ScanRequest = {}, learning?: Learni
       eventRiskPenalty: eventPenalty,
       rationale: `Evidence combines agent score, rolling forward stability, source quality, portfolio overlap and event risk. ${lab.validationWinner?.name ?? "No strategy"} has ${strategyStability}/100 walk-forward stability.`,
     };
-
-    const held = positions.some((p) => p.symbol === symbol && p.qty > 0);
-    const researchConfidenceAdjustment = learning?.mode === "ADAPTIVE" ? learning.confidenceAdjustmentPct : 0;
-    const researchConfidence = Math.round(clamp(researchScored.confidence * 0.48 + strategyStability * 0.27 + quality.score * 0.25 - eventPenalty * 0.35 + researchConfidenceAdjustment, 25, 92));
-    const decisionConfidence = Math.round(clamp(decisionScored.confidence * 0.48 + strategyStability * 0.27 + quality.score * 0.25 - eventPenalty * 0.35 + (useLearnedForDecisions ? researchConfidenceAdjustment : 0), 25, 92));
-    const gateReasons: string[] = [];
-    const baseAction = actionFor(decisionScored.score, held, regime, indicators.realizedVol20Pct, assetClass);
-    let action = baseAction;
-
-    if (!held && baseAction === "WATCH") gateReasons.push(decisionScored.score < ENGINE.buyThreshold ? "SCORE_BELOW_BUY_THRESHOLD" : "BASE_POLICY_WATCH");
-    if (!held && baseAction === "AVOID") {
-      if ((indicators.realizedVol20Pct ?? 0) >= (assetClass === "CRYPTO" ? 120 : ENGINE.avoidVolatilityPct)) gateReasons.push("VOLATILITY_TOO_HIGH");
-      else if (regime === "RISK_OFF" && decisionScored.score < 0.64) gateReasons.push("RISK_OFF_SCORE_TOO_LOW");
-      else gateReasons.push("NEGATIVE_AGENT_SCORE");
-    }
-    if (held && baseAction !== "BUY_SETUP") gateReasons.push("EXISTING_POSITION_POLICY");
-
-    if (!historyPassesDataGate(history.source, quality, assetClass)) { action = "AVOID"; gateReasons.push("DATA_GATE_FAILED"); }
-    if (action === "BUY_SETUP" && ((assetClass === "EQUITY" && !equityBenchmarkVerified) || (assetClass === "CRYPTO" && !cryptoBenchmarkVerified))) { action = "WATCH"; gateReasons.push("BENCHMARK_UNVERIFIED"); }
-    if (eventRisk.level === "BLOCK" && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("EVENT_RISK_BLOCK"); }
-    if (decisionEvidenceScore < 54 && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("EVIDENCE_BELOW_MINIMUM"); }
-    if (Object.values(strategyStates).every((state) => state === "RETIRED") && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("ALL_STRATEGIES_RETIRED"); }
-    if (corrStatus === "HIGH" && action === "BUY_SETUP" && heldSymbols.length) { action = "WATCH"; gateReasons.push("CORRELATION_TOO_HIGH"); }
-
-    let plan = buildTradePlan(action, indicators, settings, exposure, assetClass);
-    if (action === "BUY_SETUP" && plan.suggestedShares <= 0) {
-      action = "WATCH";
-      gateReasons.push("POSITION_SIZE_ZERO");
-      plan = buildTradePlan(action, indicators, settings, exposure, assetClass);
-    }
-    if (action === "BUY_SETUP" && gateReasons.length === 0) gateReasons.push("ALL_GATES_PASS");
     const remainingExposurePct = Math.max(0, settings.maxPortfolioExposurePct - (exposure / settings.accountSize) * 100);
     const riskVote: AgentVote = {
       id: "risk",

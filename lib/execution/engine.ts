@@ -1,7 +1,7 @@
 // Execution cycle: manage exits first, reconcile, then (only if every gate passes)
 // place new protected entries. Runs after the nightly scan; stops live at the broker.
 
-import { ENGINE } from "@/lib/engine/config";
+import { BROKER_ROUND_TRIP_BPS, ENGINE, KRAKEN_MAKER_ENTRY_DISCOUNT } from "@/lib/engine/config";
 import { resolveKrakenPairForSymbol } from "@/lib/engine/market-data";
 import type { ScanResult, ValidationSummary } from "@/lib/engine/types";
 import { createAlpacaClient, type AlpacaClient } from "./alpaca";
@@ -22,6 +22,12 @@ export type ExecutionReport = {
 };
 
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+/** P&L after estimated broker fees, so the loss breaker sees what the account sees. */
+export function netPnlUsd(order: Pick<ExecOrder, "broker" | "limit_usd">, exitUsd: number, qty: number) {
+  const costBps = order.broker === "KRAKEN" ? BROKER_ROUND_TRIP_BPS.CRYPTO : BROKER_ROUND_TRIP_BPS.EQUITY;
+  return (exitUsd - order.limit_usd) * qty - order.limit_usd * qty * costBps / 10_000;
+}
 
 // ---------- Alpaca management ----------
 
@@ -57,7 +63,7 @@ async function manageAlpaca(order: ExecOrder, client: AlpacaClient, now: Date, c
   if (filledLeg) {
     const exit = num(filledLeg.filled_avg_price);
     const reason: ExitReason = (filledLeg.type ?? filledLeg.order_type) === "limit" ? "TARGET" : "STOP";
-    await updateOrder(order.id, { status: "CLOSED", closed_at: now.toISOString(), exit_price_usd: exit, exit_reason: reason, pnl_usd: (exit - order.limit_usd) * order.qty });
+    await updateOrder(order.id, { status: "CLOSED", closed_at: now.toISOString(), exit_price_usd: exit, exit_reason: reason, pnl_usd: netPnlUsd(order, exit, order.qty) });
     closed.push(`${order.symbol} ${reason} @ $${exit}`);
     return;
   }
@@ -72,7 +78,7 @@ async function manageAlpaca(order: ExecOrder, client: AlpacaClient, now: Date, c
   for (const open of await client.openOrders(order.symbol)) await client.cancelOrder(open.id);
   const exitOrder = await client.closePosition(order.symbol);
   const estimate = num(position.current_price);
-  await updateOrder(order.id, { status: "CLOSED", closed_at: now.toISOString(), exit_price_usd: estimate, exit_reason: decision.reason as ExitReason, pnl_usd: (estimate - order.limit_usd) * order.qty, detail: `Market close order ${exitOrder?.id ?? "n/a"}; exit price is the last-price estimate.` });
+  await updateOrder(order.id, { status: "CLOSED", closed_at: now.toISOString(), exit_price_usd: estimate, exit_reason: decision.reason as ExitReason, pnl_usd: netPnlUsd(order, estimate, order.qty), detail: `Market close order ${exitOrder?.id ?? "n/a"}; exit price is the last-price estimate.` });
   closed.push(`${order.symbol} ${decision.reason} ≈ $${estimate}`);
 }
 
@@ -83,24 +89,37 @@ async function manageKraken(order: ExecOrder, client: KrakenClient, now: Date, c
   const pair = order.broker_symbol!;
   const closedOrders = Object.values(await client.closedOrders(userref));
   const openOrders = Object.values(await client.openOrders(userref));
-  const buy = closedOrders.find((o) => o.descr.type === "buy" && o.status === "closed" && num(o.vol_exec) > 0);
+  // A post-only limit may fill fully ("closed") or partly before expiring/cancelling.
+  const buy = closedOrders.find((o) => o.descr.type === "buy" && num(o.vol_exec) > 0);
+  const restingBuy = openOrders.find((o) => o.descr.type === "buy");
 
   if (order.status !== "OPEN") {
-    if (!buy) {
+    if (restingBuy) {
+      // Still resting (or part-filled and resting). Wait — unless the owner is flattening.
+      if (!forceReason) return;
+      await client.cancelByUserref(userref);
+      if (num(restingBuy.vol_exec) <= 0) {
+        await updateOrder(order.id, { status: "CANCELLED", exit_reason: "FLATTEN", detail: "Resting Kraken entry cancelled by flatten." });
+        return;
+      }
+      // Part-filled: fall through and close the filled volume below.
+    }
+    const filled = buy ?? (restingBuy && num(restingBuy.vol_exec) > 0 ? restingBuy : undefined);
+    if (!filled) {
       const anyBuy = closedOrders.find((o) => o.descr.type === "buy") ?? openOrders.find((o) => o.descr.type === "buy");
       if (!anyBuy) await updateOrder(order.id, { status: "REJECTED", detail: "Order never reached Kraken." });
       else if (anyBuy.status === "canceled" || anyBuy.status === "expired") await updateOrder(order.id, { status: "CANCELLED", detail: `Kraken entry ${anyBuy.status}.` });
       return;
     }
-    await updateOrder(order.id, { status: "OPEN", opened_at: now.toISOString(), qty: num(buy.vol_exec), limit_usd: num(buy.price) || order.limit_usd });
-    order = { ...order, status: "OPEN", qty: num(buy.vol_exec), limit_usd: num(buy.price) || order.limit_usd, opened_at: now.toISOString() };
+    await updateOrder(order.id, { status: "OPEN", opened_at: now.toISOString(), qty: num(filled.vol_exec), limit_usd: num(filled.price) || order.limit_usd });
+    order = { ...order, status: "OPEN", qty: num(filled.vol_exec), limit_usd: num(filled.price) || order.limit_usd, opened_at: now.toISOString() };
   }
 
   const stopOpen = openOrders.some((o) => o.descr.type === "sell");
   const soldOrder = closedOrders.find((o) => o.descr.type === "sell" && o.status === "closed" && num(o.vol_exec) > 0);
   if (!stopOpen && soldOrder) {
     const exit = num(soldOrder.price);
-    await updateOrder(order.id, { status: "CLOSED", closed_at: now.toISOString(), exit_price_usd: exit, exit_reason: "STOP", pnl_usd: (exit - order.limit_usd) * order.qty });
+    await updateOrder(order.id, { status: "CLOSED", closed_at: now.toISOString(), exit_price_usd: exit, exit_reason: "STOP", pnl_usd: netPnlUsd(order, exit, order.qty) });
     closed.push(`${order.symbol} STOP @ $${exit}`);
     return;
   }
@@ -116,7 +135,7 @@ async function manageKraken(order: ExecOrder, client: KrakenClient, now: Date, c
   const volume = floorToDecimals(order.qty, info.lotDecimals);
   await client.marketSell({ pair, volume: volume.toFixed(info.lotDecimals), userref, validate: false });
   const exit = last ?? order.limit_usd;
-  await updateOrder(order.id, { status: "CLOSED", closed_at: now.toISOString(), exit_price_usd: exit, exit_reason: decision.reason as ExitReason, pnl_usd: (exit - order.limit_usd) * volume, detail: "Market sell; exit price is the last-price estimate." });
+  await updateOrder(order.id, { status: "CLOSED", closed_at: now.toISOString(), exit_price_usd: exit, exit_reason: decision.reason as ExitReason, pnl_usd: netPnlUsd(order, exit, volume), detail: "Market sell; exit price is the last-price estimate." });
   closed.push(`${order.symbol} ${decision.reason} ≈ $${exit}`);
 }
 
@@ -154,6 +173,7 @@ async function submitEntry(mode: LedgerMode, scanAt: string, usdPerGbp: number, 
   let brokerSymbol = intent.symbol;
   let qty = intent.qty;
   let stop = intent.stopUsd;
+  let limit = intent.limitUsd;
   let volumeText = "";
 
   if (intent.broker === "KRAKEN") {
@@ -164,17 +184,23 @@ async function submitEntry(mode: LedgerMode, scanAt: string, usdPerGbp: number, 
     brokerSymbol = info.key;
     qty = floorToDecimals(intent.qty, info.lotDecimals);
     stop = roundToDecimals(intent.stopUsd, info.pairDecimals);
+    // Post-only maker entry: never above the planned limit, and always below the live
+    // price so Kraken accepts it as a resting (maker) order instead of rejecting it.
+    const last = await kraken.lastPrice(brokerSymbol);
+    if (!last) throw new Error("Kraken ticker unavailable; refusing to price a limit entry blind.");
+    limit = floorToDecimals(Math.min(intent.limitUsd, last * KRAKEN_MAKER_ENTRY_DISCOUNT), info.pairDecimals);
+    if (!(limit > stop)) throw new Error(`Live price $${last} leaves the maker limit at or below the stop; skipped.`);
     if (qty < info.orderMin) throw new Error(`Volume ${qty} below Kraken minimum ${info.orderMin}.`);
-    if (info.costMin && qty * intent.limitUsd < info.costMin) throw new Error(`Cost below Kraken minimum $${info.costMin}.`);
-    if (!(stop > 0) || stop >= intent.limitUsd) throw new Error("Stop invalid after Kraken price rounding.");
+    if (info.costMin && qty * limit < info.costMin) throw new Error(`Cost below Kraken minimum $${info.costMin}.`);
+    if (!(stop > 0) || stop >= limit) throw new Error("Stop invalid after Kraken price rounding.");
     volumeText = qty.toFixed(info.lotDecimals);
   }
 
   const paperKraken = intent.broker === "KRAKEN" && mode === "PAPER";
   const claimed = await claimOrder({
     broker: intent.broker, mode, symbol: intent.symbol, broker_symbol: brokerSymbol, client_ref: clientRef, userref,
-    status: "PENDING_SUBMIT", qty, limit_usd: intent.limitUsd, stop_usd: stop, target_usd: intent.targetUsd,
-    notional_usd: qty * intent.limitUsd, notional_gbp: (qty * intent.limitUsd) / usdPerGbp, usd_per_gbp: usdPerGbp, detail: null,
+    status: "PENDING_SUBMIT", qty, limit_usd: limit, stop_usd: stop, target_usd: intent.targetUsd,
+    notional_usd: qty * limit, notional_gbp: (qty * limit) / usdPerGbp, usd_per_gbp: usdPerGbp, detail: null,
   });
   if (!claimed) return null; // already handled for this symbol/day/mode
 
@@ -188,12 +214,12 @@ async function submitEntry(mode: LedgerMode, scanAt: string, usdPerGbp: number, 
       await updateOrder(claimed.id, { status: "SUBMITTED", broker_order_id: remote?.id ?? null });
     } else {
       const kraken = createKrakenClient()!;
-      const result = await kraken.buyWithStop({ pair: brokerSymbol, volume: volumeText, stopPrice: String(stop), userref, validate: paperKraken });
+      const result = await kraken.buyWithStop({ pair: brokerSymbol, volume: volumeText, limitPrice: String(limit), stopPrice: String(stop), userref, validate: paperKraken });
       await updateOrder(claimed.id, paperKraken
         ? { status: "VALIDATED", detail: `Kraken validated (not executed): ${result.descr.order}${result.descr.close ? ` · ${result.descr.close}` : ""}` }
         : { status: "SUBMITTED", broker_order_id: result.txid?.[0] ?? null, detail: result.descr.order });
     }
-    return `${mode} ${intent.broker} ${intent.symbol} qty ${qty} @≤$${intent.limitUsd} stop $${stop} target $${intent.targetUsd}${paperKraken ? " (validated only)" : ""}`;
+    return `${mode} ${intent.broker} ${intent.symbol} qty ${qty} @≤$${limit} stop $${stop} target $${intent.targetUsd}${paperKraken ? " (validated only)" : ""}`;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // Ambiguous network failures stay PENDING_SUBMIT and are reconciled next cycle by
@@ -206,9 +232,9 @@ async function submitEntry(mode: LedgerMode, scanAt: string, usdPerGbp: number, 
 
 export async function runExecutionCycle(scan: ScanResult, validation: ValidationSummary | undefined, now = new Date()): Promise<ExecutionReport> {
   const env = readExecutionEnv();
-  const report: ExecutionReport = { at: now.toISOString(), decision: { mode: "OFF", newEntriesAllowed: false, reasons: [] }, submitted: [], closed: [], skipped: [], errors: [] };
+  const report: ExecutionReport = { at: now.toISOString(), decision: { mode: "OFF", newEntriesAllowed: false, liveAssetClasses: [], reasons: [] }, submitted: [], closed: [], skipped: [], errors: [] };
   if (env.requestedMode === "OFF") {
-    report.decision = { mode: "OFF", newEntriesAllowed: false, reasons: ["EXECUTION_MODE is off."] };
+    report.decision = { mode: "OFF", newEntriesAllowed: false, liveAssetClasses: [], reasons: ["EXECUTION_MODE is off."] };
     return report;
   }
 
@@ -223,7 +249,7 @@ export async function runExecutionCycle(scan: ScanResult, validation: Validation
   const loss = candidateMode === "LIVE" ? await realizedLossGbp("LIVE").catch(() => Number.POSITIVE_INFINITY) : 0;
   // Fail closed: if positions cannot be reconciled, treat it as an unknown position.
   const unknown = await unknownAlpacaPositions(candidateMode).catch(() => 1);
-  let decision = resolveMode({ env, readiness: validation?.liveReadiness, dbHalted: state.halted, fxVerified: fx?.source === "FRANKFURTER_DAILY", realizedLossGbp: loss, unknownBrokerPositions: unknown });
+  let decision = resolveMode({ env, readiness: validation?.executionReadiness, dbHalted: state.halted, fxVerified: fx?.source === "FRANKFURTER_DAILY", realizedLossGbp: loss, unknownBrokerPositions: unknown });
   if (decision.mode !== candidateMode && decision.mode === "PAPER") {
     const paperUnknown = await unknownAlpacaPositions("PAPER").catch(() => 1);
     if (paperUnknown) decision = { ...decision, newEntriesAllowed: false, reasons: [...decision.reasons, `${paperUnknown} paper broker position(s) are not in the bot ledger — reconcile before new entries.`] };
@@ -245,6 +271,7 @@ export async function runExecutionCycle(scan: ScanResult, validation: Validation
       openPositions: active.length,
       openSymbols: new Set(active.map((o) => o.symbol)),
       brokersAvailable: brokers,
+      liveAssetClasses: mode === "LIVE" ? new Set(decision.liveAssetClasses) : undefined,
     });
     report.skipped.push(...skipped);
     for (const intent of intents) {
