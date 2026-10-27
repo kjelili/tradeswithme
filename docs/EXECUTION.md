@@ -142,3 +142,16 @@ The aim moved from "find the best line" to "find rules that are still good after
 Safety: only mapped instruments are touched; drifts under `REBALANCE_BAND_PCT` (3%) are skipped; per-order cap `REBALANCE_MAX_ORDER` (code ceiling 25,000); optional `REBALANCE_BUDGET`; plans expire after 6 h and can run once (conditional status update); never retried; `TRADING_KILL_SWITCH` and the desk Halt block it. Instruments you don't hold yet are listed as a one-off **manual** buy (the API gives no safe price for them); after that, rebalances are automatic.
 
 Schedule: `/api/cron/rebalance` runs weekdays 10:40 UTC (London open in both GMT and BST). Default: proposes the month's plan once and emails it. `REBALANCE_AUTO=on`: executes it without approval (max 3 attempts per month, stops once EXECUTED). Run a full month on demo before `T212_ENV=live`.
+
+## V5.9 — AI agent arena (`/desk` → AI agent arena)
+
+People run "Grok bots" (xAI agents on an always-on cloud computer, some wired to Interactive Brokers) to trade. The public record is thin: a ~2-week Alpha Arena contest win, and a live paper tracker where 5 Grok-written bots average +3.9% (one +34%, three negative). A Grok-linked bot was also tricked into sending ~$200k of crypto in May 2026. The arena tests the idea on *your* data before any money is involved.
+
+- **Agents:** Grok (xAI API) and Claude (Anthropic API), plus two rule agents: `hold_spy` and `blend_rule` (your 50/50 blend). Same inputs, same costs.
+- **Input:** only numbers we compute at the last close — 1/3/6/12-month returns, 3-month volatility, distance from the 200-day average and from the 1-year high for 9 ETFs + cash. No web, no news, no tools, no text from outside (so nothing to inject).
+- **Output:** JSON target weights, parsed strictly (known tickers only, 0–1 each, sum ≤ 1, remainder to cash). Anything else is stored as a failed day and the agent keeps yesterday's weights.
+- **Scoring:** forward-only. A decision stored for close *d* earns from close *d+1*, minus 0.05% per unit of turnover. Compared with the S&P and the blend over the same days; daily-difference t-test → P(edge > 0).
+- **Verdict:** `TOO EARLY` until 120 trading days. Then `AHEAD — SIGNIFICANT` (t ≥ 2), `AHEAD — COULD BE LUCK`, or `BEHIND`. Paper only, permanently: a graduate becomes a strategy the ISA rebalancer runs with your approval, never an agent with broker keys.
+- **Why forward-only:** a language model has already read the price history a backtest would use, so any LLM backtest is contaminated.
+
+Setup: re-run `supabase/schema.sql` (adds `twm_arena_decision`), set `XAI_API_KEY` + `XAI_MODEL` and/or `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL` (current model ids from each provider's docs — not guessed in code). Runs inside the nightly cron; "Run today now" on the desk is idempotent.
