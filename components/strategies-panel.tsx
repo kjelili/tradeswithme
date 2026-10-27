@@ -129,7 +129,7 @@ export default function StrategiesPanel() {
   const [report, setReport] = useState<Report | null>(null);
   const [busy, setBusy] = useState(false);
   const [ccy, setCcy] = useState<"USD" | "GBP">("GBP");
-  const [selected, setSelected] = useState<string>("ensemble");
+  const [selected, setSelected] = useState<string>("blend_spy_rot");
 
   const load = useCallback(async (refresh = false) => {
     setBusy(true);

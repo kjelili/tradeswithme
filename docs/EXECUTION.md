@@ -129,12 +129,12 @@ The aim moved from "find the best line" to "find rules that are still good after
 
 **GBP view.** Daily ECB USD/GBP (Frankfurter) converts every fund into pounds. Decisions are still made on USD prices, so positions are identical; only returns change. Cash keeps the T-bill return as a stand-in for GBP cash interest.
 
-**Featured cards / monthly email** now show: Ensemble, 50/50 blend, best-2-of-5 rotation, global tracker.
+**Featured cards / monthly email** now show: 50/50 blend (default, chosen after the first real GBP run: S&P-like return with a ~25% smaller worst drop), best-2-of-5 rotation, Ensemble, Hold S&P 500.
 
 ### Trading 212 ISA rebalance assistant (`/desk` → ISA rebalance assistant)
 
 1. In the Trading 212 app: Settings → API (beta). Create a key on your **practice (demo)** account first, scopes: account, portfolio, metadata, orders:execute. The API cannot withdraw.
-2. Set `T212_API_KEY`, `T212_API_SECRET`, `T212_ENV=demo`, `REBALANCE_STRATEGY` (default `ensemble`).
+2. Set `T212_API_KEY`, `T212_API_SECRET`, `T212_ENV=demo`, `REBALANCE_STRATEGY` (default `blend_spy_rot`, the 50/50 blend — needs only SPY, QQQ, EEM, GLD, TLT mapped).
 3. Set `T212_TICKER_MAP` — every US proxy the strategy can hold → your Trading 212 ticker. The plan **blocks** if a needed proxy is missing or a ticker isn't in your instrument list. The ensemble needs SPY, QQQ, EEM, GLD, TLT, EFA, IEF, VNQ, DBC (BIL = cash, no mapping). Rotation-only strategies need SPY, QQQ, EEM, GLD, TLT. Check every ticker in the app (they look like `VUAGl_EQ`).
 4. Re-run `supabase/schema.sql` (adds `twm_rebalance_plan`).
 5. "Make plan now" reads cash + positions and shows target vs now, drift and orders. **Approve & send** places sells, waits, re-reads cash, then buys sized to what's actually available.

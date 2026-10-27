@@ -2,7 +2,7 @@
 import { describeWeights, UCITS_EQUIVALENT, type StrategyResult, type Weights } from "./allocation";
 
 export type AlertState = { month: string | null; holdings: Record<string, Weights>; dailyTrend: Weights | null };
-export const FEATURED = ["ensemble", "blend_spy_rot", "rot_top2_12", "hold_global"];
+export const FEATURED = ["blend_spy_rot", "rot_top2_12", "ensemble", "hold_spy"];
 
 const same = (a: Weights | null | undefined, b: Weights | null | undefined) => describeWeights(a ?? {}) === describeWeights(b ?? {});
 

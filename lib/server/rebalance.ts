@@ -20,7 +20,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const num = (v: string | undefined, d: number) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : d; };
 
 export function rebalanceSettings(env: NodeJS.ProcessEnv = process.env) {
-  const strategy = env.REBALANCE_STRATEGY?.trim() || "ensemble";
+  const strategy = env.REBALANCE_STRATEGY?.trim() || "blend_spy_rot";
   return {
     strategy: strategy === "ensemble_tranched" ? "ensemble" : strategy, // tranching is a backtest device; trade the ensemble's own target
     auto: ["1", "true", "on", "yes"].includes((env.REBALANCE_AUTO ?? "").trim().toLowerCase()),
