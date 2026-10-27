@@ -78,3 +78,15 @@ Adopted from reviewing two trading-bot demos (a Polymarket HFT desk and a Solana
 The replay's filter toggles show whether the edge gate and chase filter actually removed losing trades. Keep a filter on only if the removed trades averaged below zero.
 
 Migration: re-run `supabase/schema.sql` (adds `rationale` and `twm_activity_log`).
+
+## V5.6 — Improvement lab (`/desk` → Improvement lab, or `npm run lab`)
+
+The first real replay (Oct 2023 – Oct 2026) showed 44 trades at +0.46% after costs, PF 1.49, but only 1 of 44 trades reached its 2R target (34 timed out) and a +7% portfolio return against SPY +75%. The lab asks whether *any* simple change makes it beat just holding — without fooling itself.
+
+- **One decision per day, 27 variants on top.** Entry bar strict (live) / medium / loose × target 1R / 1.5R / 2R × hold 5 / 10 / 20 days. The entry rules are the live `classifyEntry` with different thresholds, and a per-day **parity check** proves the lab's strict entry equals the live decision (shown on the panel; must be 0).
+- **Scored vs the benchmark.** Every trade's return is compared with holding SPY (stocks) or BTC (crypto) over the same dates ("vs bench"). Positive net but zero alpha means it is just market exposure.
+- **Train / held-out split.** Variants are ranked on everything before the last 365 days (by t-stat of net returns). The winner is then judged only on the held-out year. Verdicts: `EDGE HOLDS OUT OF SAMPLE` (≥30 held-out trades, alpha t ≥ 2, 95% range above 0), `PROMISING, NOT PROVEN`, `NO EDGE`.
+- **Simple strategies to beat:** buy-and-hold and "hold SPY only when above its 200-day average" (decided on the previous close, switch costs included), for the full period and the held-out year.
+- **Sizing:** share of the winner's stock trades that cannot buy one whole share at £50 / 3 slots, and the cap that would cover 90%. Alpaca fractional shares only support *day* orders (no brackets), so fractional execution would need the stop re-placed every morning before the open.
+
+Only change the live config to a lab variant if it earns `EDGE HOLDS OUT OF SAMPLE` — and then still paper-trade it first.

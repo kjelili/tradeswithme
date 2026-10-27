@@ -14,13 +14,13 @@ export function portfolioExposure(positions: PositionInput[], prices: Map<string
   return positions.reduce((sum, p) => sum + Math.max(0, p.qty) * (prices.get(p.symbol.toUpperCase()) ?? Math.max(0, p.avgPrice)), 0);
 }
 
-export function actionFor(score: number, held: boolean, regime: Regime, volatilityPct: number | null, assetClass: AssetClass = "EQUITY"): SignalAction {
+export function actionFor(score: number, held: boolean, regime: Regime, volatilityPct: number | null, assetClass: AssetClass = "EQUITY", buyThreshold = 0.46): SignalAction {
   if (held && score <= -0.28) return "EXIT";
   if (held) return score >= 0.15 ? "HOLD" : "WATCH";
   const volatilityCeiling = assetClass === "CRYPTO" ? 120 : 65;
   if ((volatilityPct ?? 0) >= volatilityCeiling) return "AVOID";
   if (regime === "RISK_OFF" && score < 0.64) return "AVOID";
-  if (score >= 0.46) return "BUY_SETUP";
+  if (score >= buyThreshold) return "BUY_SETUP";
   if (score <= -0.2) return "AVOID";
   return "WATCH";
 }

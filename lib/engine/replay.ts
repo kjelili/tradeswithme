@@ -18,7 +18,7 @@ function round(v: number, d = 4) {
   return Math.round(v * p) / p;
 }
 
-function syntheticQuality(bars: PriceBar[], assetClass: AssetClass): DataQuality {
+export function syntheticQuality(bars: PriceBar[], assetClass: AssetClass): DataQuality {
   // Historical bars were fresh on the day they were the latest bar. Score with the same
   // formula as assessDataQuality, with freshness at its best value.
   const barScore = Math.min(25, Math.max(0, (bars.length - 160) / 8));

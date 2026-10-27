@@ -88,23 +88,14 @@ export function decideSymbol(input: DecisionInput) {
   const researchConfidence = Math.round(clamp(researchScored.confidence * 0.48 + strategyStability * 0.27 + quality.score * 0.25 - eventPenalty * 0.35 + researchConfidenceAdjustment, 25, 92));
   const decisionConfidence = Math.round(clamp(decisionScored.confidence * 0.48 + strategyStability * 0.27 + quality.score * 0.25 - eventPenalty * 0.35 + (useLearnedForDecisions ? researchConfidenceAdjustment : 0), 25, 92));
 
-  const gateReasons: string[] = [];
-  const baseAction = actionFor(decisionScored.score, held, regime, indicators.realizedVol20Pct, assetClass);
-  let action: SignalAction = baseAction;
-  if (!held && baseAction === "WATCH") gateReasons.push(decisionScored.score < ENGINE.buyThreshold ? "SCORE_BELOW_BUY_THRESHOLD" : "BASE_POLICY_WATCH");
-  if (!held && baseAction === "AVOID") {
-    if ((indicators.realizedVol20Pct ?? 0) >= (assetClass === "CRYPTO" ? 120 : ENGINE.avoidVolatilityPct)) gateReasons.push("VOLATILITY_TOO_HIGH");
-    else if (regime === "RISK_OFF" && decisionScored.score < 0.64) gateReasons.push("RISK_OFF_SCORE_TOO_LOW");
-    else gateReasons.push("NEGATIVE_AGENT_SCORE");
-  }
-  if (held && baseAction !== "BUY_SETUP") gateReasons.push("EXISTING_POSITION_POLICY");
-
-  if (!historyPassesDataGate(source, quality, assetClass)) { action = "AVOID"; gateReasons.push("DATA_GATE_FAILED"); }
-  if (action === "BUY_SETUP" && !input.benchmarkVerified) { action = "WATCH"; gateReasons.push("BENCHMARK_UNVERIFIED"); }
-  if (eventRisk.level === "BLOCK" && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("EVENT_RISK_BLOCK"); }
-  if (decisionEvidenceScore < 54 && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("EVIDENCE_BELOW_MINIMUM"); }
-  if (Object.values(strategyStates).every((state) => state === "RETIRED") && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("ALL_STRATEGIES_RETIRED"); }
-  if (corrStatus === "HIGH" && action === "BUY_SETUP" && input.heldSymbolCount) { action = "WATCH"; gateReasons.push("CORRELATION_TOO_HIGH"); }
+  const { action: gatedAction, gateReasons } = classifyEntry({
+    score: decisionScored.score, held, regime, volatilityPct: indicators.realizedVol20Pct, assetClass,
+    dataGateOk: historyPassesDataGate(source, quality, assetClass), benchmarkVerified: input.benchmarkVerified,
+    eventLevel: eventRisk.level, evidence: decisionEvidenceScore,
+    allStrategiesRetired: Object.values(strategyStates).every((state) => state === "RETIRED"),
+    correlationBlocks: corrStatus === "HIGH" && input.heldSymbolCount > 0,
+  });
+  let action: SignalAction = gatedAction;
 
   let plan = buildTradePlan(action, indicators, settings, exposure, assetClass);
   if (action === "BUY_SETUP" && plan.suggestedShares <= 0) {
@@ -121,13 +112,46 @@ export function decideSymbol(input: DecisionInput) {
   };
 }
 
-/** The overnight planner's extra entry filter (mirrors overnight.ts eligibility). */
-export function passesOvernightGate(d: { action: SignalAction; source: MarketSource; decisionScore: number; decisionConfidence: number; decisionEvidenceScore: number; eventLevel: EventRisk["level"]; corrStatus: string; suggestedNotional: number }) {
+/** Entry thresholds. STRICT_ENTRY is exactly what the live bot uses; the lab tests looser ones. */
+export type EntryThresholds = { id: string; label: string; buy: number; minEvidence: number; overnightScore: number; overnightConfidence: number; overnightEvidence: number };
+export const STRICT_ENTRY: EntryThresholds = { id: "strict", label: "Strict (live)", buy: ENGINE.buyThreshold, minEvidence: 54, overnightScore: ENGINE.overnightMinScore, overnightConfidence: ENGINE.overnightMinConfidence, overnightEvidence: ENGINE.overnightMinEvidenceScore };
+export const MEDIUM_ENTRY: EntryThresholds = { id: "medium", label: "Medium", buy: 0.40, minEvidence: 52, overnightScore: 0.42, overnightConfidence: 56, overnightEvidence: 54 };
+export const LOOSE_ENTRY: EntryThresholds = { id: "loose", label: "Loose", buy: 0.34, minEvidence: 50, overnightScore: 0.36, overnightConfidence: 52, overnightEvidence: 50 };
+
+export type EntryInputs = {
+  score: number; held: boolean; regime: Regime; volatilityPct: number | null; assetClass: AssetClass;
+  dataGateOk: boolean; benchmarkVerified: boolean; eventLevel: EventRisk["level"]; evidence: number;
+  allStrategiesRetired: boolean; correlationBlocks: boolean;
+};
+
+/** The BUY_SETUP gate chain. The live decision calls this with STRICT_ENTRY. */
+export function classifyEntry(x: EntryInputs, t: EntryThresholds = STRICT_ENTRY): { action: SignalAction; gateReasons: string[] } {
+  const gateReasons: string[] = [];
+  const baseAction = actionFor(x.score, x.held, x.regime, x.volatilityPct, x.assetClass, t.buy);
+  let action: SignalAction = baseAction;
+  if (!x.held && baseAction === "WATCH") gateReasons.push(x.score < t.buy ? "SCORE_BELOW_BUY_THRESHOLD" : "BASE_POLICY_WATCH");
+  if (!x.held && baseAction === "AVOID") {
+    if ((x.volatilityPct ?? 0) >= (x.assetClass === "CRYPTO" ? 120 : ENGINE.avoidVolatilityPct)) gateReasons.push("VOLATILITY_TOO_HIGH");
+    else if (x.regime === "RISK_OFF" && x.score < 0.64) gateReasons.push("RISK_OFF_SCORE_TOO_LOW");
+    else gateReasons.push("NEGATIVE_AGENT_SCORE");
+  }
+  if (x.held && baseAction !== "BUY_SETUP") gateReasons.push("EXISTING_POSITION_POLICY");
+  if (!x.dataGateOk) { action = "AVOID"; gateReasons.push("DATA_GATE_FAILED"); }
+  if (action === "BUY_SETUP" && !x.benchmarkVerified) { action = "WATCH"; gateReasons.push("BENCHMARK_UNVERIFIED"); }
+  if (x.eventLevel === "BLOCK" && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("EVENT_RISK_BLOCK"); }
+  if (x.evidence < t.minEvidence && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("EVIDENCE_BELOW_MINIMUM"); }
+  if (x.allStrategiesRetired && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("ALL_STRATEGIES_RETIRED"); }
+  if (x.correlationBlocks && action === "BUY_SETUP") { action = "WATCH"; gateReasons.push("CORRELATION_TOO_HIGH"); }
+  return { action, gateReasons };
+}
+
+/** The overnight planner's extra entry filter (mirrors overnight.ts eligibility at STRICT_ENTRY). */
+export function passesOvernightGate(d: { action: SignalAction; source: MarketSource; decisionScore: number; decisionConfidence: number; decisionEvidenceScore: number; eventLevel: EventRisk["level"]; corrStatus: string; suggestedNotional: number }, t: EntryThresholds = STRICT_ENTRY) {
   return d.action === "BUY_SETUP" &&
     d.source !== "SIMULATED_FALLBACK" &&
-    d.decisionScore >= ENGINE.overnightMinScore &&
-    d.decisionConfidence >= ENGINE.overnightMinConfidence &&
-    d.decisionEvidenceScore >= ENGINE.overnightMinEvidenceScore &&
+    d.decisionScore >= t.overnightScore &&
+    d.decisionConfidence >= t.overnightConfidence &&
+    d.decisionEvidenceScore >= t.overnightEvidence &&
     d.eventLevel !== "BLOCK" &&
     d.corrStatus !== "HIGH" &&
     d.suggestedNotional > 0;

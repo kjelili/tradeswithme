@@ -127,3 +127,15 @@
 .fan-grid{stroke:var(--soft);vector-effect:non-scaling-stroke}
 .fan-plot{position:relative}.fan-axis{position:absolute;transform:translateY(-50%);color:var(--muted);font:10px ui-monospace,monospace;pointer-events:none}.fan-axis[style*="bottom"]{transform:none}
 @media(max-width:900px){.ins-grid{grid-template-columns:1fr}.why-grid,.fan-head{grid-template-columns:1fr 1fr}.funnel li{grid-template-columns:110px 1fr 36px}}
+
+/* V5.6 improvement lab */
+.lab-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-top:14px}
+.lab-stat{background:var(--panel2);padding:12px}
+.lab-stat span{display:block;font:700 8px ui-monospace,monospace;letter-spacing:.06em;color:var(--muted);text-transform:uppercase}
+.lab-stat strong{display:block;margin-top:6px;font:800 20px ui-monospace,monospace}
+.lab-stat small{display:block;margin-top:4px;color:var(--muted);font-size:11px}
+.lab-best td{background:#10201a}.lab-live td{background:#1a1810}
+.lab-edge_holds_out_of_sample{color:var(--accent);border-color:var(--accent)!important}
+.lab-promising_not_proven{color:var(--warn);border-color:var(--warn)!important}
+.lab-no_edge{color:var(--danger);border-color:var(--danger)!important}
+@media(max-width:900px){.lab-grid{grid-template-columns:1fr 1fr}}
