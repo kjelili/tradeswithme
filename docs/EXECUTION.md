@@ -155,3 +155,32 @@ People run "Grok bots" (xAI agents on an always-on cloud computer, some wired to
 - **Why forward-only:** a language model has already read the price history a backtest would use, so any LLM backtest is contaminated.
 
 Setup: re-run `supabase/schema.sql` (adds `twm_arena_decision`), set `XAI_API_KEY` + `XAI_MODEL` and/or `ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL` (current model ids from each provider's docs — not guessed in code). Runs inside the nightly cron; "Run today now" on the desk is idempotent.
+
+## V6.0 — Polymarket wallet research + Betfair event agent
+
+**Why not trade Polymarket:** Polymarket lists the UK as close-only (existing positions can be closed; new ones can't be opened). So Polymarket is used **read-only** for research, and money goes through the **Betfair Exchange** (UK Gambling Commission licensed, public API).
+
+### Polymarket: who has an edge that isn't luck (`/desk`)
+
+- **Scan:** the month and all-time PnL leaderboards (deduplicated) → each wallet's trades over the last 120 days (`/v2/activity`) → resolutions from Gamma (cached in `twm_pm_market`). Runs in batches; the 15-minute job keeps going until the queue is empty.
+- **Luck test:** a price is a probability, so a no-skill trader's position wins with the probability paid. 3,000 replays of each wallet's own positions under that null give **P(luck)**.
+- **Multiple testing:** Benjamini–Hochberg q-values across every wallet scanned. A leaderboard is selected on profit, so most rows should fail.
+- **Held out:** the first two-thirds of the window flag the edge; the final third must confirm it (p < 0.1, ROI > 0) → `SKILL — HELD OUT`.
+- **Also reported:** win rate vs the implied win rate it paid for, ROI, largest single-market share of profit (>50% = one big call), median bet, sizing skill (size vs result correlation), hours before close (timing), style (favourite sniper / longshot / late news-reactive). Wallets dominated by splits/merges/rewards are **excluded** as market makers.
+- **Smart-money flow:** what edge-confirmed wallets bought in the last 3 days; matched by name to Betfair markets and passed to the event agent as context.
+
+### Event agent (Betfair) — every 15 minutes
+
+1. Settle finished bets (runner WINNER/LOSER, commission on net winnings).
+2. Scan up to 60 of the busiest football / politics single-winner markets in the next 48 h.
+3. **Cross-outcome arbitrage:** back-all (book < 100%) or lay-all (book > 100%) with stakes equalised across outcomes, liquidity-capped, **after commission**. Live legs are fill-or-kill.
+4. **News → market → probability:** for the top markets, 24 h of headlines from GDELT + smart-money flow → the model (Claude or Grok) returns probabilities only. Headlines are fenced as untrusted data; replies are parsed to numbers or discarded.
+5. **Mispricing:** the model's probability is blended with the market's (trust 30% medium / 50% high / 0% low confidence). Back or lay where the edge after commission ≥ 3%, odds ≤ 10.
+6. **Kelly:** ¼ Kelly, max 2% of bankroll per bet, Betfair tick ladder, minimum stake, never more than the offered size.
+7. **Real money** requires all of: a live app key (Betfair charges a one-off fee), `EVENT_AGENT_MODE=live`, the evidence gate (100 settled paper value bets, ROI > 0, t ≥ 2), no kill switch / desk halt, and total live exposure ≤ `EVENT_LIVE_CAP_GBP` (£50). `customerRef` makes Betfair reject duplicate orders; ambiguous placements are never resubmitted.
+
+**Schedule:** Vercel Hobby crons run once a day, so `.github/workflows/event-agent.yml` calls `/api/cron/event-agent` every 15 minutes. Add repository secrets `TWM_URL` and `TWM_CRON_SECRET` (= `CRON_SECRET`).
+
+**Setup:** re-run `supabase/schema.sql`; set `BETFAIR_APP_KEY` (start with the free delayed key), `BETFAIR_USERNAME`, `BETFAIR_PASSWORD`, `EVENT_AGENT_MODE=paper`, and the model keys from V5.9.
+
+**Honest limits:** Betfair markets are efficient on big events; true single-market arbitrage is rare and closes in seconds (a 15-minute agent will mostly see none). The model has no special access to news beyond headlines. Betfair also charges an Expert Fee on large long-run profits. The paper record decides — not this document.

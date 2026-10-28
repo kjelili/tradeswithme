@@ -10,6 +10,7 @@ import { refreshDiscoveryGovernance } from "@/lib/engine/governance-intelligence
 import { persistAutomationRun } from "@/lib/server/observatory";
 import { runExecutionCycle, type ExecutionReport } from "@/lib/execution/engine";
 import { runStrategyAlerts } from "@/lib/server/strategy-alerts";
+import { runArena } from "@/lib/server/arena";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,6 +97,14 @@ export async function GET(request: NextRequest) {
       await runStrategyAlerts();
     } catch (error) {
       scan.warnings.push(`Strategy signal failed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    phase = "AI_ARENA";
+    try {
+      const arena = await runArena();
+      for (const w of arena.written.filter((x) => x.endsWith(":ERROR"))) scan.warnings.push(`AI arena: ${w}`);
+    } catch (error) {
+      scan.warnings.push(`AI arena failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
     phase = "LOG_RUN";

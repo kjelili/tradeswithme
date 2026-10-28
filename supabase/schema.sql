@@ -289,3 +289,84 @@ create table if not exists public.twm_rebalance_plan (
 );
 create index if not exists twm_rebalance_plan_month_idx on public.twm_rebalance_plan (month, created_at desc);
 alter table public.twm_rebalance_plan enable row level security;
+
+-- V5.9 AI agent arena: one paper decision per agent per trading day (forward-only, never executed).
+create table if not exists public.twm_arena_decision (
+  id bigint generated always as identity primary key,
+  agent text not null,
+  date text not null,
+  status text not null check (status in ('OK','ERROR')),
+  weights jsonb,
+  rationale text,
+  model text,
+  error text,
+  created_at timestamptz not null default now(),
+  unique (agent, date)
+);
+alter table public.twm_arena_decision enable row level security;
+
+-- V6.0 Polymarket wallet research (read-only public data).
+create table if not exists public.twm_pm_scan (
+  id text primary key,
+  started_at text,
+  window_start bigint,
+  split_ts bigint,
+  queue jsonb not null default '[]'::jsonb,
+  total int not null default 0,
+  flow jsonb,
+  flow_at timestamptz
+);
+create table if not exists public.twm_pm_wallet (
+  wallet text primary key,
+  scan_started text not null,
+  result jsonb not null,
+  updated_at timestamptz not null default now()
+);
+create table if not exists public.twm_pm_market (
+  condition_id text primary key,
+  winning_index int,
+  end_ts bigint,
+  title text,
+  updated_at timestamptz not null default now()
+);
+alter table public.twm_pm_scan enable row level security;
+alter table public.twm_pm_wallet enable row level security;
+alter table public.twm_pm_market enable row level security;
+
+-- V6.0 Betfair event agent: every bet (paper or live) and every model view.
+create table if not exists public.twm_event_bet (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  mode text not null check (mode in ('PAPER','LIVE')),
+  kind text not null check (kind in ('VALUE','ARB')),
+  arb_group text,
+  market_id text not null,
+  market_name text,
+  event_name text,
+  start_time text,
+  selection_id bigint not null,
+  runner text,
+  side text not null check (side in ('BACK','LAY')),
+  price numeric not null,
+  stake numeric not null,
+  risk numeric not null,
+  p_model numeric, p_market numeric, p_used numeric, edge_pct numeric,
+  reason text,
+  news jsonb,
+  status text not null check (status in ('OPEN','SETTLED','VOID','REJECTED')),
+  pnl numeric,
+  bet_id text,
+  size_matched numeric,
+  customer_ref text not null unique,
+  error text,
+  settled_at timestamptz
+);
+create index if not exists twm_event_bet_status_idx on public.twm_event_bet (status, mode);
+create table if not exists public.twm_event_view (
+  id bigint generated always as identity primary key,
+  created_at timestamptz not null default now(),
+  market_id text, market_name text, event_name text, model text, confidence text, reason text, error text,
+  probabilities jsonb, market_probabilities jsonb, runners jsonb, headlines jsonb, smart_money jsonb, idea jsonb
+);
+alter table public.twm_event_bet enable row level security;
+alter table public.twm_event_view enable row level security;

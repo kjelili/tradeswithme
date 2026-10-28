@@ -1,0 +1,23 @@
+# Calls the event agent every 15 minutes. Set repository secrets:
+#   TWM_URL          e.g. https://tradeswithme.com
+#   TWM_CRON_SECRET  the same value as CRON_SECRET in Vercel
+name: event-agent
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+concurrency:
+  group: event-agent
+  cancel-in-progress: false
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Run one cycle
+        env:
+          TWM_URL: ${{ secrets.TWM_URL }}
+          TWM_CRON_SECRET: ${{ secrets.TWM_CRON_SECRET }}
+        run: |
+          if [ -z "$TWM_URL" ] || [ -z "$TWM_CRON_SECRET" ]; then echo "Secrets not set; skipping."; exit 0; fi
+          curl -sS --fail-with-body --max-time 320 -H "Authorization: Bearer $TWM_CRON_SECRET" "$TWM_URL/api/cron/event-agent"

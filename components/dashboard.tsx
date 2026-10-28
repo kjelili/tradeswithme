@@ -223,7 +223,7 @@ export default function Dashboard() {
   return (
     <main className="shell">
       <header className="topbar">
-        <div className="brand-wrap"><div className="logo-mark"><span>T</span></div><div><div className="brand">TRADES<span>WITHME</span></div><div className="tagline">OWNER DESK · V5.8 ROBUST ALLOCATION + ISA REBALANCER</div></div></div>
+        <div className="brand-wrap"><div className="logo-mark"><span>T</span></div><div><div className="brand">TRADES<span>WITHME</span></div><div className="tagline">OWNER DESK · V6.0 EVENT AGENT + AI ARENA + ISA REBALANCER</div></div></div>
         <div className="header-actions"><span className="status-pill"><i /> PERSONAL MODE</span><span className="mode-pill">OVERNIGHT PAPER · £50 HARD CAP</span></div>
       </header>
 
@@ -348,7 +348,7 @@ export default function Dashboard() {
       </section>
 
       {scan?.warnings?.length ? <section className="warning-strip"><b>Validation / data warnings</b>{scan.warnings.map((w, i) => <span key={i}>{w}</span>)}</section> : null}
-      <footer><p>TradesWithMe V5.5 is a personal adaptive research, forward-validation and risk-planning tool. Broker execution is off unless EXECUTION_MODE is set, and real money unlocks only per asset class after VALIDATED evidence at realistic broker costs (see the Autopilot panel). The learner may reweight research agents and calibrate confidence, but it cannot change the £50 cap, risk rules, data/event gates or place live orders. A high evidence, learning or trust score is not a promise of profit.</p><span>TRADESWITHME.COM · V5.8</span></footer>
+      <footer><p>TradesWithMe V5.5 is a personal adaptive research, forward-validation and risk-planning tool. Broker execution is off unless EXECUTION_MODE is set, and real money unlocks only per asset class after VALIDATED evidence at realistic broker costs (see the Autopilot panel). The learner may reweight research agents and calibrate confidence, but it cannot change the £50 cap, risk rules, data/event gates or place live orders. A high evidence, learning or trust score is not a promise of profit.</p><span>TRADESWITHME.COM · V6.0</span></footer>
     </main>
   );
 }

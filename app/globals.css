@@ -174,3 +174,10 @@
 .rb-approve{background:var(--accent)!important;color:#04130b;border-color:var(--accent)!important}
 .rb-plan{margin-top:6px}
 .rb-plan b,.rb-plan td:first-child{font-family:ui-monospace,monospace;text-transform:none}
+/* V5.9 arena */
+.arena-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:middle}
+.arena-log li{margin:4px 0}
+/* V6.0 event agent + polymarket */
+.ev-news{display:block;color:var(--muted);margin-top:2px}
+.rb-link{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;font:inherit;text-decoration:underline}
+.exec-table a{color:var(--text)}
